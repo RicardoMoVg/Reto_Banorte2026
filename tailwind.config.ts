@@ -18,6 +18,11 @@ const config: Config = {
           600: '#166348',
           900: '#0c3527',
         },
+        // Rojo institucional Banorte — acento de marca para A2UI.
+        banorte: {
+          DEFAULT: '#EB0029',
+          600: '#C40022',
+        },
       },
       borderRadius: {
         lg: '0.75rem',

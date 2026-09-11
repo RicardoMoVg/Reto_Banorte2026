@@ -1,84 +1,57 @@
 'use client';
 
-import { useChat } from 'ai/react';
-import { RastreadorMetas } from '@/components/ui-blocks';
-
-/**
- * El "ensamblador": recorre las tool-invocations que devolvió el modelo y,
- * por cada una, elige el bloque de LEGO correspondiente del catálogo.
- * Agregar un bloque nuevo = agregar un `case` aquí + su tool en route.ts.
- */
-function BloqueDesdeToolInvocation({
-  toolName,
-  state,
-  result,
-}: {
-  toolName: string;
-  state: 'partial-call' | 'call' | 'result';
-  result?: any;
-}) {
-  if (state !== 'result') {
-    // Aquí es donde Framer Motion puede lucirse con un skeleton/spinner
-    // mientras el MCP responde.
-    return (
-      <div className="h-20 w-full max-w-md animate-pulse rounded-xl bg-mosaico-50" />
-    );
-  }
-
-  switch (toolName) {
-    case 'mostrarRastreadorMeta':
-      return (
-        <RastreadorMetas
-          titulo={result.titulo}
-          porcentaje={result.porcentaje}
-          montoActual={result.montoActual}
-          montoObjetivo={result.montoObjetivo}
-        />
-      );
-    default:
-      return null;
-  }
-}
+import { useState } from 'react';
+import { useActions, useUIState } from '@ai-sdk/rsc';
+import type { AI } from './acciones/ai';
 
 export default function Page() {
-  const { messages, input, handleInputChange, handleSubmit } = useChat();
+  const [input, setInput] = useState('');
+  const [conversation, setConversation] = useUIState<typeof AI>();
+  const { enviarMensaje } = useActions<typeof AI>();
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    const value = input;
+    setInput('');
+
+    // 1) Pintamos el mensaje del usuario de inmediato (optimista).
+    setConversation((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        role: 'user',
+        display: <p className="text-sm font-medium text-neutral-800">{value}</p>,
+      },
+    ]);
+
+    // 2) Llamamos al Server Action — devuelve un nodo de React (texto o
+    //    bloque A2UI) que se agrega tal cual al historial.
+    const respuesta = await enviarMensaje(value);
+    setConversation((prev) => [...prev, respuesta]);
+  }
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-4 p-6">
-      <h1 className="text-xl font-bold text-mosaico-900">Mosaico</h1>
+      <h1 className="text-xl font-bold text-neutral-900">Mosaico</h1>
 
       <div className="flex-1 space-y-4 overflow-y-auto">
-        {messages.map((m) => (
-          <div key={m.id} className="space-y-2">
-            {m.role === 'user' ? (
-              <p className="text-sm font-medium text-mosaico-900/80">{m.content}</p>
-            ) : (
-              <>
-                {m.content && <p className="text-sm text-mosaico-900">{m.content}</p>}
-                {m.toolInvocations?.map((ti) => (
-                  <BloqueDesdeToolInvocation
-                    key={ti.toolCallId}
-                    toolName={ti.toolName}
-                    state={ti.state}
-                    result={'result' in ti ? ti.result : undefined}
-                  />
-                ))}
-              </>
-            )}
-          </div>
+        {conversation.map((m) => (
+          <div key={m.id}>{m.display}</div>
         ))}
       </div>
 
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
-          className="flex-1 rounded-lg border border-mosaico-100 px-3 py-2 text-sm outline-none focus:border-mosaico-500"
+          className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-banorte"
           value={input}
           placeholder="¿Cómo voy con mis metas?"
-          onChange={handleInputChange}
+          onChange={(e) => setInput(e.target.value)}
         />
         <button
           type="submit"
-          className="rounded-lg bg-mosaico-500 px-4 py-2 text-sm font-medium text-white hover:bg-mosaico-600"
+          className="rounded-lg bg-banorte px-4 py-2 text-sm font-medium text-white hover:bg-banorte-600"
         >
           Enviar
         </button>
