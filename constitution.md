@@ -152,6 +152,59 @@ Reglas:
 - Todo componente recibe `mensajeAgente: string` — es el espacio del agente
   para dar contexto humano, nunca se omite.
 
+### 4.4 Patrón para tools de componentes genéricos (ej. `mostrarComponente`)
+
+Un componente **genérico** (no atado a un dominio — ej. una gráfica que
+sirve para metas, gastos, o lo que sea) no necesita una tool por dominio.
+Puede existir una sola tool que:
+
+1. Deja que el modelo elija **qué dato traer** y **qué componente usar**
+   (enums), más texto libre para títulos/etiquetas/`mensajeAgente`.
+2. Deja que el modelo decida **el acomodo** — orden, cuáles elementos
+   mostrar, cuál va en cuál posición — pero **por referencia (`idDato`),
+   nunca por valor**.
+3. El código (`execute`) hace el `lookup` del valor real por ese `idDato` y
+   lo inyecta en `props` — el valor numérico **nunca pasa por la
+   generación de texto del modelo**, ni siquiera para "transportarlo".
+
+```ts
+mostrarComponente: tool({
+  parameters: z.object({
+    componente: z.enum(['GraficaBarras', 'GraficaPay', 'Lista' /* ... */]),
+    titulo: z.string(),          // texto libre, lo redacta el modelo
+    campos: z.array(z.object({
+      idDato: z.string(),        // referencia (ej. "tarjeta-x"), NUNCA el monto
+      etiqueta: z.string(),      // texto libre, lo redacta el modelo
+    })),
+    mensajeAgente: z.string(),
+  }),
+  execute: async ({ componente, titulo, campos, mensajeAgente }) => {
+    const datosReales = await getAlgoDeMCP(userId); // ej. { "tarjeta-x": 4500, "tarjeta-y": 1200 }
+
+    const items = campos.map((c) => ({
+      label: c.etiqueta,
+      value: datosReales[c.idDato], // inyectado por código, no por el modelo
+    }));
+
+    return { tipo: componente, props: { titulo, items, mensajeAgente } };
+  },
+}),
+```
+
+**Por qué por referencia y no por valor:** si el modelo tuviera que escribir
+el número en su respuesta (aunque sea "solo para pasarlo"), está
+retranscribiendo una cifra financiera generándola como texto — el mismo
+riesgo de error/alucinación que la regla de la sección 4.2 ya prohíbe. Con
+`idDato`, el modelo nunca "toca" el número; solo dice a qué referencia
+corresponde cada posición.
+
+**Prerrequisito de diseño:** los componentes genéricos que compartan este
+patrón deben compartir una forma de props consistente (ej. todos los de
+"tipo gráfica" reciben `{ titulo, items: [{label, value}], mensajeAgente }`)
+para que una sola tool los pueda alimentar a todos sin una rama de código
+distinta por cada uno. Esto se coordina con quien diseñe esos componentes
+en `client/components/` (ver sección 5).
+
 ## 5. Reglas para trabajo en ramas paralelas
 
 Ahora mismo hay dos frentes activos:
@@ -169,7 +222,8 @@ Para que ambas ramas se puedan juntar sin fricción:
    importar en qué rama se creó. Así, cuando el catálogo del mini-SDK
    exista, registrar un componente es una línea (`{ NombreComponente }` en
    el mapa), no una reescritura.
-2. **Toda tool nueva sigue el contrato de la sección 4.2.** Un componente
+2. **Toda tool nueva sigue el contrato de la sección 4.2** (dominio-específica)
+   **o el de la 4.4** (genérica, tipo `mostrarComponente`). Un componente
    sin su tool correspondiente en `server/lib/ai/a2ui-tools.ts` no sirve de
    nada — el agente nunca lo puede invocar.
 3. Si `feature/dynamic-components` necesita tocar `client/App.tsx` para

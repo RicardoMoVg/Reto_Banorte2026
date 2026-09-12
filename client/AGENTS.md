@@ -62,3 +62,25 @@ vez.
    agregar el `case`/rama en `App.tsx` siguiendo el patrón de los 4 bloques
    existentes (`RastreadorMetas`, `TarjetaSaldo`, `ListaTransacciones`,
    `ComparativoGastos`).
+
+## Componentes genéricos (ej. `feature/dynamic-components`)
+
+Si el componente es genérico (sirve para cualquier categoría de datos, no
+un dominio fijo — ej. una gráfica reusable), lo va a alimentar una tool tipo
+`mostrarComponente` (`constitution.md` 4.4), no una tool dedicada. Para que
+una sola tool pueda alimentar a varios componentes genéricos sin una rama de
+código por cada uno, **todos los que sean del mismo "tipo" de visual**
+(gráficas, listas, etc.) deben aceptar la misma forma de props, por ejemplo:
+
+```ts
+interface ComponenteGenericoProps {
+  titulo: string;
+  items: { label: string; value: number }[];
+  mensajeAgente: string;
+}
+```
+
+Si vas a crear varios componentes genéricos, define y documenta esa forma
+compartida **antes** de escribir el primero, y avisa en `server/` qué forma
+quedó — así la tool `mostrarComponente` sabe cómo darle forma a los datos
+sin importar cuál de tus componentes elija el modelo.
