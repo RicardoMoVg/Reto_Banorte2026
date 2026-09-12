@@ -1,8 +1,8 @@
 # AGENTS.md — server/
 
-Sigue las reglas de `../constitution.md` (secciones 2, 4.1 y 4.2 aplican
-directo a este paquete). Esto de aquí son detalles internos propios de
-`server/`.
+Sigue las reglas de `../constitution.md` (secciones 2, 4.1, 4.2 y 4.4
+aplican directo a este paquete). Esto de aquí son detalles internos propios
+de `server/`.
 
 ## Qué es y qué NO es este paquete
 
@@ -48,9 +48,21 @@ etc.). Si sientes que necesitas eso, es una señal de que ese trabajo va en
   intencional para dev (el cliente RN corre en otro origen). Endurecerlo
   antes de exponer este API fuera de la red local del equipo.
 
-## Al agregar un bloque nuevo
+## Al agregar un bloque nuevo (dominio-específico)
 
 1. Schema en `a2ui-schemas.ts`.
 2. Tool en `a2ui-tools.ts`, llamando a una función de `mcp-client.ts`
    (agrega la función ahí si el dato no existe todavía).
 3. Nada más — `route.ts` no cambia, ya es genérico sobre `buildA2uiTools`.
+
+## Al conectar un componente genérico (ej. `feature/dynamic-components`)
+
+No crees una tool nueva por cada componente genérico. Usa el patrón de
+`constitution.md` 4.4 (`mostrarComponente` con `campos: [{idDato, etiqueta}]`):
+el modelo elige componente + estructura por **referencia**, `execute` hace
+el `lookup` del valor real por `idDato` y lo inyecta — **nunca dejes que el
+modelo escriba el número en su propia respuesta**, ni para "solo pasarlo".
+Si un componente nuevo necesita una forma de props distinta a
+`{ titulo, items: [{label, value}], mensajeAgente }`, coordínalo primero
+con quien lo esté diseñando en `client/` para no terminar con una rama de
+`execute` por cada combinación dato×componente.
