@@ -1,17 +1,19 @@
 import { tool } from 'ai';
-import { getMetasUsuario } from '@/lib/mcp/mcp-client';
-import { schemaProgresoMeta } from './a2ui-schemas';
+import { getMetasUsuario, getSaldoUsuario, getTransaccionesRecientes } from '@/lib/mcp/mcp-client';
+import {
+  schemaProgresoMeta,
+  schemaSaldo,
+  schemaTransacciones,
+  schemaComparativoGastos,
+} from './a2ui-schemas';
 
 /**
  * Catálogo de tools del A2UI-lite (API JSON, /app/api/agent/route.ts).
  *
  * Cada tool usa la API plana de "ai" y su `execute` regresa JSON, nunca
- * JSX — el cliente (mobile/) decide cómo pintarlo con su propio catálogo
+ * JSX — el cliente (client/) decide cómo pintarlo con su propio catálogo
  * de componentes nativos. Llama al MCP real: el modelo nunca inventa
  * datos, solo elige qué mostrar y redacta el mensaje de contexto.
- *
- * Paso 1 del plan de migración: un solo bloque (mostrarProgresoMeta) para
- * probar el contrato de punta a punta antes de agregar el resto.
  */
 export function buildA2uiTools(userId: string) {
   return {
@@ -36,6 +38,79 @@ export function buildA2uiTools(userId: string) {
             porcentaje: meta.porcentaje,
             mensajeAgente,
           },
+        };
+      },
+    }),
+
+    mostrarSaldo: tool({
+      description:
+        'Muestra un monto financiero destacado: saldo disponible, total ' +
+        'gastado en el mes, dinero ahorrado, etc.',
+      parameters: schemaSaldo,
+      execute: async ({ titulo, mensajeAgente }) => {
+        const saldo = await getSaldoUsuario(userId);
+
+        return {
+          tipo: 'TarjetaSaldo' as const,
+          props: {
+            titulo,
+            monto: saldo,
+            mensajeAgente,
+          },
+        };
+      },
+    }),
+
+    mostrarTransacciones: tool({
+      description:
+        'Muestra una lista de movimientos recientes del usuario. Úsala ' +
+        'cuando pregunte en qué gastó, sus últimos cargos o sus ingresos.',
+      parameters: schemaTransacciones,
+      execute: async ({ titulo, limite, mensajeAgente }) => {
+        const transacciones = await getTransaccionesRecientes(userId, limite ?? 10);
+
+        return {
+          tipo: 'ListaTransacciones' as const,
+          props: {
+            titulo,
+            transacciones: transacciones.map((t) => ({
+              descripcion: t.descripcion,
+              monto: t.monto,
+              categoria: t.categoria,
+            })),
+            mensajeAgente,
+          },
+        };
+      },
+    }),
+
+    mostrarComparativoGastos: tool({
+      description:
+        'Muestra una gráfica de barras comparando cuánto gastó el usuario ' +
+        'por categoría. Úsala cuando pregunte en qué se le va el dinero o ' +
+        'pida comparar categorías.',
+      parameters: schemaComparativoGastos,
+      execute: async ({ titulo, mensajeAgente }) => {
+        // No existe una tool de MCP para "gasto por categoría" — se
+        // agrega aquí en JS a partir de las transacciones, en vez de
+        // agregar una tabla/query nueva en mcp-server/ (ver plan, Paso 3c).
+        const transacciones = await getTransaccionesRecientes(userId, 100);
+
+        const porCategoria = new Map<string, number>();
+        for (const t of transacciones) {
+          if (t.monto >= 0) continue; // solo gastos, no ingresos
+          const categoria = t.categoria || 'otros';
+          porCategoria.set(categoria, (porCategoria.get(categoria) ?? 0) + Math.abs(t.monto));
+        }
+
+        const categorias = Array.from(porCategoria.entries())
+          .map(([nombre, monto]) => ({ nombre, monto }))
+          .sort((a, b) => b.monto - a.monto)
+          .slice(0, 6);
+
+        return {
+          tipo: 'ComparativoGastos' as const,
+          props: { titulo, categorias, mensajeAgente },
         };
       },
     }),

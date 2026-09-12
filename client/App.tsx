@@ -12,15 +12,42 @@ import {
   View,
 } from 'react-native';
 import { RastreadorMetas, type RastreadorMetasProps } from './components/RastreadorMetas';
+import { TarjetaSaldo, type TarjetaSaldoProps } from './components/TarjetaSaldo';
+import { ListaTransacciones, type ListaTransaccionesProps } from './components/ListaTransacciones';
+import { ComparativoGastos, type ComparativoGastosProps } from './components/ComparativoGastos';
 
 /**
- * Paso 2 del plan de migración: probar la cadena completa
- * (RN -> HTTP -> streamText -> MCP -> NDJSON -> RN) con UN solo bloque,
- * renderizado directo (sin catálogo/mini-SDK genérico todavía).
+ * Paso 3 del plan de migración: agregar bloques uno a la vez, todavía
+ * renderizado directo por `switch`/tipo (sin catálogo/mini-SDK genérico
+ * todavía — eso es el Paso 4, en otra rama).
  */
 type Mensaje =
   | { id: string; tipo: 'texto'; rol: 'user' | 'asistente'; contenido: string }
-  | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: string; props: RastreadorMetasProps };
+  | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: 'RastreadorMetas'; props: RastreadorMetasProps }
+  | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: 'TarjetaSaldo'; props: TarjetaSaldoProps }
+  | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: 'ListaTransacciones'; props: ListaTransaccionesProps }
+  | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: 'ComparativoGastos'; props: ComparativoGastosProps };
+
+const NOMBRES_SURFACE = [
+  'RastreadorMetas',
+  'TarjetaSaldo',
+  'ListaTransacciones',
+  'ComparativoGastos',
+] as const;
+
+/** Pinta el bloque nativo correspondiente — un `switch` concreto, no un catálogo genérico (Paso 4). */
+function renderBloque(m: Extract<Mensaje, { tipo: 'surface' }>) {
+  switch (m.nombre) {
+    case 'RastreadorMetas':
+      return <RastreadorMetas key={m.id} {...m.props} />;
+    case 'TarjetaSaldo':
+      return <TarjetaSaldo key={m.id} {...m.props} />;
+    case 'ListaTransacciones':
+      return <ListaTransacciones key={m.id} {...m.props} />;
+    case 'ComparativoGastos':
+      return <ComparativoGastos key={m.id} {...m.props} />;
+  }
+}
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -70,7 +97,10 @@ export default function App() {
           if (!linea.trim()) continue;
           const evento = JSON.parse(linea);
 
-          if (evento.type === 'surface' && evento.tipo === 'RastreadorMetas') {
+          if (
+            evento.type === 'surface' &&
+            NOMBRES_SURFACE.includes(evento.tipo)
+          ) {
             setMensajes((prev) => [
               ...prev,
               {
@@ -121,7 +151,7 @@ export default function App() {
         )}
         {mensajes.map((m) =>
           m.tipo === 'surface' ? (
-            <RastreadorMetas key={m.id} {...m.props} />
+            renderBloque(m)
           ) : (
             <Text
               key={m.id}

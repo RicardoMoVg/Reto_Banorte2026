@@ -1,12 +1,10 @@
 import { z } from 'zod';
 
 /**
- * Schemas del catálogo A2UI-lite (API JSON para el cliente RN).
+ * Schemas del catálogo A2UI-lite (API JSON para el cliente client/).
  *
- * Duplicados a propósito desde lib/ai/bloques.tsx en vez de importarlos de
- * ahí: esa ruta sigue siendo del chat web (RSC/streamUI) y no se toca
- * mientras el equipo decide si la retira. Cuando ambos caminos convivan
- * establemente, se puede unificar en un solo archivo fuente.
+ * Cada schema es el "data schema" de un item del catálogo — define qué
+ * puede/debe elegir el modelo (nunca datos crudos, esos vienen del MCP).
  */
 export const schemaProgresoMeta = z.object({
   metaId: z
@@ -18,4 +16,34 @@ export const schemaProgresoMeta = z.object({
   mensajeAgente: z
     .string()
     .describe('Mensaje breve (una línea) y motivador sobre este avance.'),
+});
+
+export const schemaSaldo = z.object({
+  titulo: z
+    .string()
+    .describe('Qué representa el monto, ej. "Saldo disponible", "Total del mes".'),
+  mensajeAgente: z.string().describe('Contexto breve, una línea.'),
+});
+
+export const schemaTransacciones = z.object({
+  titulo: z
+    .string()
+    .describe('Encabezado de la lista, ej. "Últimos movimientos".'),
+  limite: z
+    .number()
+    .int()
+    .positive()
+    .max(20)
+    .optional()
+    .describe('Cuántos movimientos mostrar. Si no se especifica, se usan 10.'),
+  mensajeAgente: z.string().describe('Observación breve, una línea.'),
+});
+
+export const schemaComparativoGastos = z.object({
+  titulo: z
+    .string()
+    .describe('Encabezado, ej. "Tus gastos de septiembre".'),
+  mensajeAgente: z
+    .string()
+    .describe('Insight breve sobre el patrón de gasto, una línea.'),
 });
