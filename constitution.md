@@ -86,6 +86,46 @@ quiere que el modelo tenga memoria de conversaciones pasadas, el cliente
 tiene que mandar ese historial explícitamente en el body de cada request —
 no se agrega un store de conversaciones en el servidor como atajo.
 
+### 3.2 Rehidratación del dashboard — receta, nunca snapshot
+
+Cuando el usuario "ancla" un bloque al dashboard (Paso 5, pendiente en
+`client/`), la tentación es guardar el resultado ya resuelto (ej.
+`{titulo: "Fondo de emergencia", porcentaje: 62}`). **No se hace así**: al
+volver a abrir la app días después, ese 62% puede ya ser falso — un dato
+financiero desactualizado, aunque nadie lo haya inventado.
+
+En vez de eso, `dashboard_widgets` (Postgres, tabla en `mcp-server/`) guarda
+la **receta** para regenerar el bloque, no el número:
+
+```
+{
+  componente: 'RastreadorMetas',        -- nombre en el catálogo del cliente
+  tool: 'mostrarProgresoMeta',          -- tool de server/lib/ai/a2ui-tools.ts a re-ejecutar
+  parametros: { metaId: 'meta-1' },     -- lo que el modelo hubiera elegido
+  mensajeAgente: '¡Vas por buen camino!', -- este sí se congela, es solo texto
+}
+```
+
+Al rehidratar (ej. al iniciar sesión), el backend llama **directamente**
+`tools[receta.tool].execute(receta.parametros)` — el mismo `execute` que ya
+existe en `a2ui-tools.ts`, pero invocado por código, **sin pasar por el
+modelo**. Eso trae el dato fresco del MCP en ese momento y regresa el mismo
+`{tipo, props}` de siempre. El cliente lo pinta con el mismo catálogo/
+`SurfaceRenderer` — no necesita saber que este bloque vino de una
+rehidratación y no de una respuesta en vivo del agente.
+
+**Por qué vive en Postgres y no en SQLite local:** a diferencia del
+historial de chat (sección 3.1), el layout del dashboard sí debe sobrevivir
+a un cambio de teléfono/reinstalación, y se rehidrata ejecutando código del
+lado del servidor — necesita vivir donde el servidor lo pueda leer
+directamente.
+
+**Regla:** `dashboard_widgets.parametros` y `mensaje_agente` nunca
+contienen un valor numérico resuelto (monto, porcentaje, saldo) — solo lo
+necesario para volver a pedirlo. Si una tool nueva no se puede rehidratar
+solo con sus `parameters` de Zod (ej. depende de más contexto), ese es un
+problema de diseño de la tool, no algo que se resuelve guardando el número.
+
 ## 4. El contrato A2UI-lite (esto es lo que NO se rompe)
 
 ### 4.1 Formato de red
