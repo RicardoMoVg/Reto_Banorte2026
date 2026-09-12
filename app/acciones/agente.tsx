@@ -2,7 +2,7 @@
 
 import { streamUI, getMutableAIState } from 'ai/rsc';
 import { google } from '@ai-sdk/google';
-
+import OpenAI from 'openai';
 import { construirBloques } from '@/lib/ai/bloques';
 import { SYSTEM_PROMPT } from '@/lib/ai/system-prompt';
 import type { HistorialMutable, MensajeUI } from '@/lib/ai/rsc-types';
@@ -36,6 +36,7 @@ export async function enviarMensaje(input: string): Promise<MensajeUI> {
 
   history.update([...history.get(), { role: 'user', content: input }]);
 
+  // Intento 1: Gemini
   try {
     const result = await streamUI({
       model: google('gemini-flash-latest'),
@@ -64,35 +65,53 @@ export async function enviarMensaje(input: string): Promise<MensajeUI> {
       role: 'assistant' as const,
       display: result.value,
     };
-  } catch (error) {
-    // Manejo de errores comunes de proveedores de IA
-    const errorMessage = error instanceof Error
-      ? error.message
-      : 'Error desconocido';
+  } catch (geminiError) {
+    // Gemini falló - intentar OpenAI como respaldo
+    console.warn('Gemini falló, intentando OpenAI...', geminiError);
 
-    // Si es error de demanda alta, informamos al usuario de forma amigable
-    if (errorMessage.includes('high demand') || errorMessage.includes('overloaded')) {
+    try {
+      const openaiError: any = geminiError;
+
+      // Construir el prompt para OpenAI
+      const prompt = history.get().map((msg) => ({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: typeof msg.content === 'string' ? msg.content : '',
+      }));
+
+      // Llamada a OpenAI GPT-4o-mini
+      const openai = new OpenAI();
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: prompt as any,
+        temperature: 0,
+        max_tokens: 1000,
+      });
+
+      const assistantMessage = response.choices[0]?.message?.content || '';
+
+      return {
+        id: crypto.randomUUID(),
+        role: 'assistant' as const,
+        display: (
+          <p className="text-sm leading-relaxed text-neutral-800">
+            {assistantMessage}
+          </p>
+        ),
+      };
+    } catch (openaiError) {
+      // Ambos modelos fallaron
+      console.error('OpenAI también falló:', openaiError);
+
       return {
         id: crypto.randomUUID(),
         role: 'assistant' as const,
         display: (
           <p className="text-red-600 text-sm">
-            El servicio de IA está experimentando alta demanda en este momento.
-            Por favor, inténtalo de nuevo en unos minutos.
+            El servicio de IA está saturado en este momento. Por favor,
+            inténtalo de nuevo en unos minutos.
           </p>
         ),
       };
     }
-
-    // Otro error - retornar mensaje genérico
-    return {
-      id: crypto.randomUUID(),
-      role: 'assistant' as const,
-      display: (
-        <p className="text-red-600 text-sm">
-          Error al procesar tu mensaje: {errorMessage}
-        </p>
-      ),
-    };
   }
 }
