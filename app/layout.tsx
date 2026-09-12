@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { AI } from './acciones/ai';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -13,7 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body className="min-h-screen bg-white antialiased">{children}</body>
+      <body className="min-h-screen bg-white antialiased">
+        <AI>{children}</AI>
+      </body>
     </html>
   );
 }
