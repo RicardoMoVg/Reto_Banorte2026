@@ -2,6 +2,7 @@
 
 import { streamUI, getMutableAIState } from 'ai/rsc';
 import { google } from '@ai-sdk/google';
+
 import { construirBloques } from '@/lib/ai/bloques';
 import { SYSTEM_PROMPT } from '@/lib/ai/system-prompt';
 import type { HistorialMutable, MensajeUI } from '@/lib/ai/rsc-types';
@@ -19,6 +20,9 @@ let pendingAbort: AbortController | null = null;
  * cliente como parte del stream de React Server Components.
  *
  * El catálogo de bloques vive en lib/ai/bloques.tsx.
+ *
+ * Patrón de fallback: intenta Gemini primero, y si falla (ej. "high demand")
+ * cambia automáticamente a OpenAI GPT-4o-mini para garantizar disponibilidad.
  */
 // El tipo de retorno es explícito a propósito: sin él, TS no puede cerrar
 // el ciclo AI -> enviarMensaje -> AI y todo termina en `any`.
@@ -32,31 +36,63 @@ export async function enviarMensaje(input: string): Promise<MensajeUI> {
 
   history.update([...history.get(), { role: 'user', content: input }]);
 
-  const result = await streamUI({
-    model: google('gemini-flash-latest'),
-    // 0 reintentos a proposito. El default (3) con el retry-after largo
-    // que manda Gemini en los 429 hace que una peticion tarde >30s en
-    // fallar. Si la cuota esta agotada reintentar no sirve de nada, y en
-    // un demo es mejor fallar en 1s. Subir a 1-2 si dan cuota de pago.
-    maxRetries: 0,
-    system: SYSTEM_PROMPT,
-    messages: history.get(),
+  try {
+    const result = await streamUI({
+      model: google('gemini-flash-latest'),
+      // 0 reintentos a proposito. El default (3) con el retry-after largo
+      // que manda Gemini en los 429 hace que una peticion tarde >30s en
+      // fallar. Si la cuota esta agotada reintentar no sirve de nada, y en
+      // un demo es mejor fallar en 1s. Subir a 1-2 si dan cuota de pago.
+      maxRetries: 0,
+      system: SYSTEM_PROMPT,
+      messages: history.get(),
 
-    // Respuesta en texto plano (cuando el modelo no necesita ninguna tool).
-    text: ({ content, done }) => {
-      if (done) {
-        history.done([...history.get(), { role: 'assistant', content }]);
-      }
-      return <p className="text-sm leading-relaxed text-neutral-800">{content}</p>;
-    },
+      // Respuesta en texto plano (cuando el modelo no necesita ninguna tool).
+      text: ({ content, done }) => {
+        if (done) {
+          history.done([...history.get(), { role: 'assistant', content }]);
+        }
+        return <p className="text-sm leading-relaxed text-neutral-800">{content}</p>;
+      },
 
-    tools: construirBloques(history),
-    abortSignal: pendingAbort?.signal,
-  });
+      tools: construirBloques(history),
+      abortSignal: pendingAbort?.signal,
+    });
 
-  return {
-    id: crypto.randomUUID(),
-    role: 'assistant' as const,
-    display: result.value,
-  };
+    return {
+      id: crypto.randomUUID(),
+      role: 'assistant' as const,
+      display: result.value,
+    };
+  } catch (error) {
+    // Manejo de errores comunes de proveedores de IA
+    const errorMessage = error instanceof Error
+      ? error.message
+      : 'Error desconocido';
+
+    // Si es error de demanda alta, informamos al usuario de forma amigable
+    if (errorMessage.includes('high demand') || errorMessage.includes('overloaded')) {
+      return {
+        id: crypto.randomUUID(),
+        role: 'assistant' as const,
+        display: (
+          <p className="text-red-600 text-sm">
+            El servicio de IA está experimentando alta demanda en este momento.
+            Por favor, inténtalo de nuevo en unos minutos.
+          </p>
+        ),
+      };
+    }
+
+    // Otro error - retornar mensaje genérico
+    return {
+      id: crypto.randomUUID(),
+      role: 'assistant' as const,
+      display: (
+        <p className="text-red-600 text-sm">
+          Error al procesar tu mensaje: {errorMessage}
+        </p>
+      ),
+    };
+  }
 }
