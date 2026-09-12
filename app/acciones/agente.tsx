@@ -26,7 +26,12 @@ export async function enviarMensaje(input: string): Promise<MensajeUI> {
   history.update([...history.get(), { role: 'user', content: input }]);
 
   const result = await streamUI({
-    model: google('gemini-3.6-flash'),
+    model: google('gemini-flash-latest'),
+    // 0 reintentos a proposito. El default (3) con el retry-after largo
+    // que manda Gemini en los 429 hace que una peticion tarde >30s en
+    // fallar. Si la cuota esta agotada reintentar no sirve de nada, y en
+    // un demo es mejor fallar en 1s. Subir a 1-2 si dan cuota de pago.
+    maxRetries: 0,
     system: SYSTEM_PROMPT,
     messages: history.get(),
 
