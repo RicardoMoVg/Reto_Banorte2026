@@ -111,7 +111,7 @@ export default function App() {
 
   return (
     <View style={styles.pantalla}>
-      <Text style={styles.encabezado}>Mosaico (mobile — Paso 2)</Text>
+      <Text style={styles.encabezado}>Mosaico</Text>
 
       <ScrollView style={styles.lista} contentContainerStyle={styles.listaContenido}>
         {mensajes.length === 0 && (

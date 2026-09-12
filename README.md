@@ -1,176 +1,74 @@
 # Mosaico — Reto Banorte 2026
 
-Asistente financiero con **A2UI (Agent-to-UI)**: el agente no manda texto ni
-JSON para que el cliente interprete — transmite componentes de React ya
-renderizados. Arquitectura de 3 capas, no negociable:
+Asistente financiero con **A2UI (Agent-to-UI)**: el agente no manda texto para
+que un humano lo lea ni JSX para que React lo renderice del lado del
+servidor — manda **JSON declarativo** (bloque + props ya resueltos con datos
+reales) y el cliente decide cómo pintarlo con su propio catálogo de
+componentes. Tres proyectos independientes, cada uno con su propio
+`package.json`:
 
-1. **LLM** — el modelo como orquestador central (decide qué mostrar).
-2. **MCP** — la única fuente de datos financieros reales (Postgres).
-3. **A2UI** — el agente transmite JSX real al cliente vía RSC (`streamUI`).
+```
+server/   → backend: el LLM (orquestador) + la API HTTP que habla A2UI-lite
+mcp-server/ → capa de datos: servidor MCP (stdio) sobre Postgres/mock
+client/   → el único cliente de UI: Expo/React Native (Android, iOS, y web)
+```
+
+`server/` **no tiene interfaz visual propia** — nadie abre una URL para
+chatear. Su único trabajo es exponer `POST /api/agent`, que `client/`
+consume por HTTP sin importar desde qué plataforma se abra.
+
+```
+client/ (Expo/RN)  --HTTP-->  server/ (agente/LLM)  --MCP(stdio)-->  mcp-server/ (datos)  --SQL-->  Postgres/mock
+```
 
 ## Setup — empieza aquí
 
-### Primera vez, y cada vez que hagas `git pull`
+### Backend (`server/`)
 
 ```bash
-git pull origin team/ricardo
-npm ci                          # app Next (raíz)
-cd agente && npm ci && cd ..    # agente suelto
-npm run dev                     # http://localhost:3000
+cd server
+npm install
 ```
 
-> **Vas a ver ~18,500 archivos borrados al hacer el pull.** Es esperado, no
-> es un bug: sacamos `agente/node_modules` del repo (estaban commiteados por
-> error y eran el 99.8% de los archivos). El `npm ci` dentro de `agente/` te
-> los devuelve idénticos gracias al `package-lock.json`.
-
-### Por qué `npm ci` y no `npm install`
-
-`npm ci` instala **exactamente** las versiones del `package-lock.json`.
-`npm install` puede subir de versión dentro del rango del `^` y traerte otra
-cosa distinta a la del resto del equipo.
-
-Esto ya rompió el proyecto una vez: `@ai-sdk/rsc: ^1.0.0` resolvió a la
-generación **v5** mientras `ai` y los providers eran **v4**, y nada compilaba
-(ver la nota de versión más abajo). Con `npm ci` todos quedamos con el mismo
-árbol de dependencias.
-
-### Variables de entorno
-
-No vienen en el repo — están en `.gitignore`, que es donde deben estar.
-Créalas a mano:
-
-**`.env.local`** en la raíz. Sin esto la UI carga pero el chat truena:
+Crea `server/.env`:
 
 ```
 GOOGLE_GENERATIVE_AI_API_KEY=tu-key
 ```
 
-**`agente/env`**, solo si vas a tocar el agente suelto de `agente/`:
-
-```
-GEMINI_API_KEY=tu-key
-```
-
 Saca tu key en <https://aistudio.google.com/apikey>.
 
-> ⚠️ **Usa tu propia key; no compartan una entre todos.** El free tier da
-> **20 requests por día por proyecto**. Si el equipo entero usa la misma se
-> agota en minutos y la app empieza a fallar con 429 (se ve como
-> `.update(): UI stream is already closed` en la consola del server — es un
-> síntoma del 429, no un bug del código).
+> ⚠️ **Usa tu propia key; no la compartan entre todos.** El free tier de
+> Gemini da muy pocas requests/día por modelo (vimos el límite real: 20
+> para `gemini-3.8-flash`, el que resuelve hoy el alias `gemini-flash-latest`
+> — por eso `server/app/api/agent/route.ts` usa el id explícito
+> `gemini-3.6-flash` en vez del alias). Si el equipo entero pega a la misma
+> key se agota en minutos y vas a ver `429` / `RESOURCE_EXHAUSTED`.
 
-### Opcional: servidor MCP
-
-`mcp-server/` no hace falta para correr la app: sin `DATABASE_URL`,
-`lib/mcp/mcp-client.ts` usa datos mock en memoria. Solo instálalo si vas a
-trabajar en la capa de datos — ver [Servidor MCP](#servidor-mcp) más abajo.
-(Ahí va `npm install` y no `npm ci`, porque ese paquete todavía no tiene
-lock file.)
-
-## Estructura de carpetas
-
-```
-mosaico/
-├── app/
-│   ├── acciones/
-│   │   ├── agente.tsx            # 🧠 Server Action: streamUI + tools (el orquestador)
-│   │   └── ai.ts                  # createAI: puente Server Action <-> estado del cliente
-│   ├── layout.tsx                 # monta <AI> envolviendo toda la app
-│   ├── page.tsx                    # UI del chat: useActions/useUIState (guarda ReactNode)
-│   └── globals.css
-│
-├── components/
-│   └── generative/                # 🧱 Bloques A2UI — SOLO UI, cero lógica de IA/MCP
-│       └── RastreadorMetas.tsx
-│
-├── lib/
-│   ├── ai/
-│   │   ├── system-prompt.ts        # personalidad/instrucciones del agente
-│   │   └── rsc-types.ts             # tipos de AIState/UIState (evita imports circulares)
-│   └── mcp/
-│       └── mcp-client.ts            # única puerta de entrada al servidor MCP
-│                                     # (con fallback a datos mock si no hay DATABASE_URL)
-│
-├── mcp-server/                     # Servidor MCP (paquete Node separado) -> Postgres
-│   ├── src/
-│   │   ├── server.ts                # McpServer + tools: get_metas, get_transacciones, get_saldo
-│   │   ├── db.ts                     # Pool de pg
-│   │   ├── schema.sql
-│   │   └── seed.ts                   # Crea tablas + inserta datos demo
-│   ├── package.json                  # Dependencias propias (@modelcontextprotocol/sdk, pg)
-│   └── .env.example
-│
-└── tailwind.config.ts / tsconfig.json / next.config.mjs
+```bash
+npm run dev   # http://localhost:3000 — solo expone /api/agent, la raíz da 404 (es esperado)
 ```
 
-**Regla de oro:** `components/generative/` no importa nada de `ai`, `ai/rsc`
-ni `lib/mcp`. Solo recibe props y se ve bonito. Toda la orquestación vive en
-`app/acciones/agente.tsx`.
+Sin `DATABASE_URL` definido, `lib/mcp/mcp-client.ts` usa datos mock en
+memoria automáticamente — pueden probar el flujo completo hoy mismo sin
+Postgres ni `mcp-server/` corriendo.
 
-## ⚠️ Qué cambió (y qué se eliminó) en este refactor
+### Cliente (`client/`)
 
-Antes teníamos `app/api/chat/route.ts` (`streamText` + `tools`, consumido con
-`useChat`). Ahora que la arquitectura exige A2UI/RSC de verdad, **eliminé**:
-- `app/api/chat/route.ts`
-- `lib/ai/tools.ts`
-- `components/ui-blocks/` (movido y renombrado a `components/generative/`)
+```bash
+cd client
+npm install
+cp .env.example .env   # ajustar EXPO_PUBLIC_API_URL según donde corras (ver el archivo)
+npm run web            # smoke test rápido en navegador
+# o, para probar en Android de verdad:
+npm run emulator -- Pixel_8   # levanta el emulador (npm run emulator, sin args, lista los AVDs disponibles)
+npm run android                # en otra terminal, una vez que el emulador esté prendido
+```
 
-Y los reemplacé por `app/acciones/agente.tsx` + `app/acciones/ai.ts`. Esto es
-intencional, no un descuido: `streamUI` (de `@ai-sdk/rsc`) solo funciona
-dentro de una **Server Action**, porque su valor de retorno es un stream de
-React Server Components — un Route Handler no puede serializar eso, solo
-`Response` HTTP normal (por eso la vez pasada usamos `streamText`). Con esta
-arquitectura ya no hay `fetch`/`useChat` en el cliente: `page.tsx` llama
-directo a la Server Action.
+### Servidor MCP (`mcp-server/`) — opcional
 
-> **Nota de versión (importante).** Con `ai@^4`, `streamUI`/`createAI` se
-> importan de **`ai/rsc`** (submódulo del propio paquete `ai`). El paquete
-> separado `@ai-sdk/rsc` pertenece a la generación **v5** y NO es compatible:
-> se trae su propio `@ai-sdk/provider@2` (`LanguageModelV2`) y choca con el
-> `@ai-sdk/provider@1` (`LanguageModelV1`) que usan `ai@4` y los providers
-> v1 — además de renombrar `parameters` a `inputSchema` en las tools.
-> Regla: todos los paquetes `@ai-sdk/*` deben ser de la misma generación.
-
-## Cómo fluye una pregunta
-
-1. El usuario escribe en `page.tsx` → se pinta su mensaje optimistamente en
-   `UIState` y se llama a `enviarMensaje(input)` (Server Action).
-2. `agente.tsx` mete el mensaje al `AIState` (historial plano) y llama a
-   `streamUI({ model, system, messages, tools })`.
-3. El modelo decide: texto plano (`text: ...`) o invocar
-   `mostrarProgresoMeta` (`tools.mostrarProgresoMeta.generate`).
-4. Si invoca la tool, `generate` hace `yield` de un skeleton, y luego
-   `return` del componente `<RastreadorMetas />` ya con props — eso es lo
-   que viaja al cliente como JSX real, no JSON.
-5. `page.tsx` recibe `{ id, role, display }` y lo agrega a `UIState` — el
-   `display` (el `ReactNode`) se renderiza tal cual con `{m.display}`.
-
-## MCP: aún no conectado a esta tool (a propósito)
-
-Tal como está, `mostrarProgresoMeta` recibe `titulo`/`porcentaje` que el
-**modelo genera**, no datos reales — dejé un comentario `TODO(MCP)` exacto
-en `app/acciones/agente.tsx` marcando dónde reemplazarlo por
-`getMetasUsuario(userId)` de `lib/mcp/mcp-client.ts` (que ya existe, ya
-tiene fallback mock, y no necesita Postgres para funcionar hoy — ver
-sección de MCP más abajo). Mientras no se conecte, el agente puede
-"inventar" el porcentaje — aceptable para probar el flujo A2UI, **no** para
-el demo final. Es el siguiente paso lógico.
-
-## Servidor MCP
-
-`mcp-server/` es un paquete Node **independiente** del de Next.js. No expone
-HTTP: habla el protocolo MCP por stdio y se levanta como proceso hijo.
-
-1. `mcp-server/src/server.ts` — tools puras de datos (`get_metas`,
-   `get_transacciones`, `get_saldo`). No sabe nada de React.
-2. `lib/mcp/mcp-client.ts` — cliente vía `experimental_createMCPClient` de
-   `ai`. Expone `getMetasUsuario`, `getTransaccionesRecientes`,
-   `getSaldoUsuario`, con fallback a mock si no hay `DATABASE_URL`.
-3. (Pendiente, ver arriba) `app/acciones/agente.tsx` llamando a esas
-   funciones desde dentro de `generate`.
-
-### Levantarlo (cuando haya Postgres)
+No hace falta para desarrollar: sin `DATABASE_URL` en `server/.env`, todo
+corre con mocks. Solo instálenlo si van a trabajar la capa de datos real:
 
 ```bash
 createdb mosaico
@@ -180,9 +78,76 @@ cp .env.example .env   # editar con el DATABASE_URL real
 npm run seed
 ```
 
+> ⚠️ **Pendiente de verificar en Windows:** el spawn del proceso hijo en
+> `lib/mcp/mcp-client.ts` usa `spawn('npx', ...)` sin `shell: true`. En
+> Windows esto puede fallar con `spawn npx ENOENT` (Node no resuelve
+> `npx.cmd` directo). Como todo el desarrollo hasta ahora usó los mocks
+> (nunca se llegó a spawnear el proceso real), esto no se ha probado en
+> anger — probarlo en cuanto configuren un `DATABASE_URL` real.
+
+## Estructura de carpetas
+
+```
+server/
+├── app/
+│   └── api/agent/route.ts     # el orquestador: streamText + tools, regresa NDJSON (A2UI-lite)
+├── lib/
+│   ├── ai/
+│   │   ├── system-prompt.ts    # personalidad/instrucciones del agente
+│   │   ├── a2ui-schemas.ts     # Zod schemas de cada bloque (el "data schema" del catálogo)
+│   │   └── a2ui-tools.ts       # catálogo de tools — cada una llama al MCP real, regresa JSON
+│   └── mcp/mcp-client.ts       # única puerta de entrada al servidor MCP (con fallback mock)
+├── package.json / next.config.mjs / tsconfig.json
+
+mcp-server/                     # Servidor MCP (paquete Node separado) -> Postgres
+├── src/
+│   ├── server.ts                # McpServer + tools: get_metas, get_transacciones, get_saldo
+│   ├── db.ts                     # Pool de pg
+│   ├── schema.sql
+│   └── seed.ts                   # Crea tablas + inserta datos demo
+└── package.json                  # Dependencias propias (@modelcontextprotocol/sdk, pg)
+
+client/                          # App Expo/React Native — Android, iOS, y web
+├── App.tsx                       # pantalla única (por ahora): input + lista de mensajes
+├── components/                   # bloques nativos (View/StyleSheet, sin Tailwind/framer-motion)
+├── scripts/emulator.js           # `npm run emulator -- <avd>` — levanta el emulador sin Android Studio
+└── package.json / app.json / tsconfig.json
+```
+
+## Cómo fluye una pregunta
+
+1. `client/App.tsx` manda `POST /api/agent` con el mensaje del usuario.
+2. `server/app/api/agent/route.ts` llama `streamText({ model, system, tools })`.
+3. El modelo decide: responder en texto, o invocar una tool de
+   `lib/ai/a2ui-tools.ts` (ej. `mostrarProgresoMeta`).
+4. La tool llama al MCP real (`lib/mcp/mcp-client.ts` → `mcp-server/`) para
+   traer el dato — el modelo nunca inventa cifras, solo elige qué mostrar y
+   redacta el mensaje de contexto.
+5. El resultado viaja al cliente como una línea NDJSON:
+   `{"type":"surface","tipo":"RastreadorMetas","props":{...}}`.
+6. `client/` recibe ese JSON y renderiza su propio componente nativo con
+   esos props — ningún JSX ni código ejecutable cruza la red, solo datos.
+
+> **Simplificación deliberada (documentar en la entrega):** cada bloque viaja
+> ya resuelto de una vez (`createSurface` + datos juntos), no incremental
+> componente-por-componente como el A2UI completo. Es un subconjunto fiel
+> del protocolo, no la versión con streaming granular — suficiente para el
+> alcance del reto.
+
 ## Siguiente bloque A2UI
 
-1. Crear `components/generative/NuevoBloque.tsx` (props tipadas + Framer Motion).
-2. En `app/acciones/agente.tsx`: agregar una entrada en `tools` con su
-   `zod` schema y su `generate` (que `return`-ea el nuevo componente).
-3. Nada que tocar en `page.tsx` ni en `ai.ts` — el `display` ya es genérico.
+1. Backend: Zod schema en `lib/ai/a2ui-schemas.ts` + tool en
+   `lib/ai/a2ui-tools.ts` (llamando a una función de `lib/mcp/mcp-client.ts`,
+   agregando una nueva si hace falta un dato distinto).
+2. Cliente: componente nativo nuevo en `client/components/` + el `case`/`if`
+   correspondiente donde `client/App.tsx` interpreta el evento `surface`.
+
+## Historial: qué se retiró
+
+El repo tuvo antes un chat web hecho con `streamUI`/Server Actions de React
+Server Components (`app/page.tsx`, `app/acciones/`, `components/generative/`,
+`components/dashboard/`). Se eliminó por completo: RSC no es un cliente A2UI
+real (manda JSX ya renderizado, no JSON — no lo puede interpretar React
+Native), y el equipo decidió que `client/` (con soporte web vía
+`react-native-web`) cubre toda superficie de UI necesaria, sin mantener dos
+implementaciones en paralelo.
