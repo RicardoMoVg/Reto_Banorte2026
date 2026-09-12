@@ -19,6 +19,22 @@ create table if not exists usuarios (
   nombre text not null
 );
 
+-- Dashboard "anclado" del usuario (Paso 5, pendiente en el cliente). Guarda
+-- la RECETA para regenerar un bloque -- nunca el valor numérico resuelto
+-- (ver constitution.md 3.2): qué componente, qué tool de a2ui-tools.ts, y
+-- con qué parámetros. Al rehidratar, el backend llama esa tool directo
+-- (sin pasar por el modelo) para traer el dato fresco del MCP.
+create table if not exists dashboard_widgets (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  componente text not null, -- nombre en el catálogo del cliente, ej. 'RastreadorMetas'
+  tool text not null,       -- tool de server/lib/ai/a2ui-tools.ts a re-ejecutar, ej. 'mostrarProgresoMeta'
+  parametros jsonb not null default '{}', -- argumentos que el modelo hubiera elegido, ej. {"metaId":"meta-1"}
+  mensaje_agente text,      -- texto de contexto -- este sí se congela, no es un dato financiero
+  orden integer not null default 0,
+  creado_en timestamptz not null default now()
+);
+
 -- ============================================================
 -- 1. Banca personal — cuentas, movimientos, control de gasto
 -- ============================================================
@@ -184,3 +200,4 @@ create index if not exists idx_polizas_usuario on polizas_seguro(usuario_id);
 create index if not exists idx_siniestros_poliza on siniestros(poliza_id);
 create index if not exists idx_diagnosticos_usuario on diagnosticos_financieros(usuario_id);
 create index if not exists idx_habitos_usuario on habitos_financieros(usuario_id);
+create index if not exists idx_dashboard_widgets_usuario on dashboard_widgets(usuario_id, orden);

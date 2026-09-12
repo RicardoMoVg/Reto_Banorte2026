@@ -29,6 +29,13 @@ async function main() {
      on conflict (id) do nothing`,
   );
 
+  // --- Dashboard anclado (receta, no el valor resuelto -- ver constitution.md 3.2) ---
+  await pool.query(
+    `insert into dashboard_widgets (id, usuario_id, componente, tool, parametros, mensaje_agente, orden) values
+       ('widget-1', 'demo-user', 'RastreadorMetas', 'mostrarProgresoMeta', '{"metaId":"meta-1"}'::jsonb, '¡Vas por muy buen camino!', 1)
+     on conflict (id) do nothing`,
+  );
+
   // --- Banca personal (extra) ---
   await pool.query(
     `insert into cuentas (id, usuario_id, tipo, alias, saldo) values
