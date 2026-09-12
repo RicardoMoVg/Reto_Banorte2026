@@ -2,26 +2,29 @@
 
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { BotonPin } from '@/components/dashboard/BotonPin';
+import type { PropsBloque } from './tipos';
 
-export interface RastreadorMetasProps {
+export interface RastreadorMetasProps extends PropsBloque {
   titulo: string;
   /** Porcentaje de avance de la meta, 0-100. */
   porcentaje: number;
-  /** Mensaje breve del agente sobre este avance (ej. "¡Vas muy bien este mes!"). */
-  mensajeAgente: string;
-  className?: string;
 }
 
 /**
- * Bloque A2UI: el agente transmite este componente ya renderizado al
- * cliente (vía streamUI/RSC) — el cliente nunca recibe JSON crudo que tenga
- * que interpretar y dibujar. Cerrado y estilizado: el agente solo decide
- * CUÁNDO usarlo y con QUÉ props, nunca cómo se ve.
+ * Bloque A2UI: progreso de una meta u hábito financiero.
+ *
+ * El agente transmite este componente ya renderizado al cliente (vía
+ * streamUI/RSC) — el cliente nunca recibe JSON crudo que tenga que
+ * interpretar. Cerrado y estilizado: el agente decide CUÁNDO usarlo y con
+ * QUÉ props, nunca cómo se ve.
  */
 export function RastreadorMetas({
   titulo,
   porcentaje,
   mensajeAgente,
+  onPin,
+  anclable = true,
   className,
 }: RastreadorMetasProps) {
   const pct = Math.min(100, Math.max(0, porcentaje));
@@ -36,9 +39,22 @@ export function RastreadorMetas({
         className,
       )}
     >
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-neutral-900">{titulo}</h3>
-        <span className="text-sm font-bold text-banorte">{pct}%</span>
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <h3 className="text-sm font-semibold leading-tight text-neutral-900">
+          {titulo}
+        </h3>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-sm font-bold tabular-nums text-banorte">
+            {pct}%
+          </span>
+          <BotonPin
+            tipo="RastreadorMetas"
+            datos={{ titulo, porcentaje: pct, mensajeAgente }}
+            onPin={onPin}
+            anclable={anclable}
+          />
+        </div>
       </div>
 
       <div className="h-3 w-full overflow-hidden rounded-full bg-neutral-100">
@@ -50,7 +66,9 @@ export function RastreadorMetas({
         />
       </div>
 
-      <p className="mt-2 text-xs text-neutral-500">{mensajeAgente}</p>
+      <p className="mt-2 text-xs leading-relaxed text-neutral-500">
+        {mensajeAgente}
+      </p>
     </motion.div>
   );
 }
