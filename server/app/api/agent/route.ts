@@ -86,10 +86,14 @@ async function* generarEventos(message: string): AsyncGenerator<EventoA2ui> {
           huboContenido = true;
           yield { type: 'text', content: part.textDelta };
         } else if (part.type === 'tool-result') {
-          const salida = part.result as { tipo?: string; props?: unknown };
+          const salida = part.result as { tipo?: string; props?: unknown; error?: string };
+          huboContenido = true;
           if (salida?.tipo) {
-            huboContenido = true;
             yield { type: 'surface', tipo: salida.tipo, props: salida.props };
+          } else {
+            // La tool regresó un error de negocio (ej. "no se encontró esa
+            // meta") en vez de un bloque -- nunca se descarta en silencio.
+            yield { type: 'text', content: salida?.error ?? 'No se pudo generar la respuesta.' };
           }
         }
       }

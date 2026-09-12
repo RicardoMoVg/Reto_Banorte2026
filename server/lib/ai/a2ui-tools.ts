@@ -25,10 +25,13 @@ export function buildA2uiTools(userId: string) {
       parameters: schemaProgresoMeta,
       execute: async ({ metaId, mensajeAgente }) => {
         const metas = await getMetasUsuario(userId);
-        const meta = metaId ? metas.find((m) => m.id === metaId) : metas[0];
+        // Si el modelo manda un metaId que no existe (a veces inventa un id
+        // "plausible" en vez de dejarlo vacío), no truena: cae a la meta con
+        // menor avance, igual que cuando no se especifica ninguno.
+        const meta = (metaId && metas.find((m) => m.id === metaId)) || metas[0];
 
         if (!meta) {
-          return { error: 'No se encontró esa meta para el usuario.' };
+          return { error: 'El usuario no tiene metas registradas.' };
         }
 
         return {
