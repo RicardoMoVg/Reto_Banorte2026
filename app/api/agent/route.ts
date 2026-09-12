@@ -18,6 +18,21 @@ export const runtime = 'nodejs';
  */
 const USER_ID = 'demo-user';
 
+/**
+ * CORS abierto: en dev, el cliente RN corre en otro origen (Expo web en su
+ * propio puerto; la app nativa no aplica CORS pero no estorba tenerlo).
+ * Endurecer/quitar antes de producción si el API queda expuesto público.
+ */
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+export function OPTIONS() {
+  return new Response(null, { headers: CORS_HEADERS });
+}
+
 type EventoA2ui =
   | { type: 'text'; content: string }
   | { type: 'surface'; tipo: string; props: unknown }
@@ -67,6 +82,6 @@ export async function POST(req: Request) {
   });
 
   return new Response(stream, {
-    headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' },
+    headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', ...CORS_HEADERS },
   });
 }
