@@ -5,11 +5,10 @@ import { schemaProgresoMeta } from './a2ui-schemas';
 /**
  * Catálogo de tools del A2UI-lite (API JSON, /app/api/agent/route.ts).
  *
- * A diferencia de lib/ai/bloques.tsx (chat web, streamUI/RSC), estas tools
- * usan la API plana de "ai" y su `execute` regresa JSON, nunca JSX — el
- * cliente (mobile) decide cómo pintarlo. También, a diferencia de
- * bloques.tsx, aquí SÍ se llama al MCP real: el modelo ya no inventa datos,
- * solo elige qué mostrar y redacta el mensaje de contexto.
+ * Cada tool usa la API plana de "ai" y su `execute` regresa JSON, nunca
+ * JSX — el cliente (mobile/) decide cómo pintarlo con su propio catálogo
+ * de componentes nativos. Llama al MCP real: el modelo nunca inventa
+ * datos, solo elige qué mostrar y redacta el mensaje de contexto.
  *
  * Paso 1 del plan de migración: un solo bloque (mostrarProgresoMeta) para
  * probar el contrato de punta a punta antes de agregar el resto.

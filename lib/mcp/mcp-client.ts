@@ -8,7 +8,7 @@ import { Experimental_StdioMCPTransport as StdioMCPTransport } from 'ai/mcp-stdi
  * tipadas de abajo.
  *
  * Importante: el modelo NUNCA ve las tools crudas del MCP (get_metas,
- * get_transacciones...). Solo ve los bloques A2UI de lib/ai/bloques.tsx,
+ * get_transacciones...). Solo ve las tools A2UI de lib/ai/a2ui-tools.ts,
  * que internamente llaman a estas funciones. Así mantenemos el control de
  * qué puede disparar la IA.
  */
