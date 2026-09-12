@@ -6,6 +6,8 @@ import { construirBloques } from '@/lib/ai/bloques';
 import { SYSTEM_PROMPT } from '@/lib/ai/system-prompt';
 import type { HistorialMutable, MensajeUI } from '@/lib/ai/rsc-types';
 
+let pendingAbort: AbortController | null = null;
+
 /**
  * El orquestador (capa "LLM" del A2UI). Recibe el mensaje del usuario, lo
  * agrega al AIState (historial que se le manda al modelo), y deja que el
@@ -22,6 +24,11 @@ import type { HistorialMutable, MensajeUI } from '@/lib/ai/rsc-types';
 // el ciclo AI -> enviarMensaje -> AI y todo termina en `any`.
 export async function enviarMensaje(input: string): Promise<MensajeUI> {
   const history = getMutableAIState() as HistorialMutable;
+
+  // Cancelar cualquier petición previa para evitar que .update() falle
+  // en un stream ya cerrado (error: "UI stream is already closed")
+  pendingAbort?.abort();
+  pendingAbort = new AbortController();
 
   history.update([...history.get(), { role: 'user', content: input }]);
 
@@ -44,6 +51,7 @@ export async function enviarMensaje(input: string): Promise<MensajeUI> {
     },
 
     tools: construirBloques(history),
+    abortSignal: pendingAbort?.signal,
   });
 
   return {
