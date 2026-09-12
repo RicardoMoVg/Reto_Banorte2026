@@ -65,6 +65,13 @@ npm run emulator -- Pixel_8   # levanta el emulador (npm run emulator, sin args,
 npm run android                # en otra terminal, una vez que el emulador esté prendido
 ```
 
+> ⚠️ **`client/.env` no se recarga solo.** `expo start` lee el `.env` una
+> sola vez al arrancar — si lo editas (ej. cambiar `EXPO_PUBLIC_API_URL` al
+> pasar de web a Android o viceversa), tienes que matar el proceso de Expo y
+> volver a correr `npm run android`/`npm run web`, y forzar que la app
+> recargue el bundle (o vas a estar pegándole a la URL vieja en silencio,
+> sin ningún error visible — así perdimos buen rato la primera vez).
+
 ### Servidor MCP (`mcp-server/`) — opcional
 
 No hace falta para desarrollar: sin `DATABASE_URL` en `server/.env`, todo
