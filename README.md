@@ -8,6 +8,66 @@ renderizados. Arquitectura de 3 capas, no negociable:
 2. **MCP** — la única fuente de datos financieros reales (Postgres).
 3. **A2UI** — el agente transmite JSX real al cliente vía RSC (`streamUI`).
 
+## Setup — empieza aquí
+
+### Primera vez, y cada vez que hagas `git pull`
+
+```bash
+git pull origin team/ricardo
+npm ci                          # app Next (raíz)
+cd agente && npm ci && cd ..    # agente suelto
+npm run dev                     # http://localhost:3000
+```
+
+> **Vas a ver ~18,500 archivos borrados al hacer el pull.** Es esperado, no
+> es un bug: sacamos `agente/node_modules` del repo (estaban commiteados por
+> error y eran el 99.8% de los archivos). El `npm ci` dentro de `agente/` te
+> los devuelve idénticos gracias al `package-lock.json`.
+
+### Por qué `npm ci` y no `npm install`
+
+`npm ci` instala **exactamente** las versiones del `package-lock.json`.
+`npm install` puede subir de versión dentro del rango del `^` y traerte otra
+cosa distinta a la del resto del equipo.
+
+Esto ya rompió el proyecto una vez: `@ai-sdk/rsc: ^1.0.0` resolvió a la
+generación **v5** mientras `ai` y los providers eran **v4**, y nada compilaba
+(ver la nota de versión más abajo). Con `npm ci` todos quedamos con el mismo
+árbol de dependencias.
+
+### Variables de entorno
+
+No vienen en el repo — están en `.gitignore`, que es donde deben estar.
+Créalas a mano:
+
+**`.env.local`** en la raíz. Sin esto la UI carga pero el chat truena:
+
+```
+GOOGLE_GENERATIVE_AI_API_KEY=tu-key
+```
+
+**`agente/env`**, solo si vas a tocar el agente suelto de `agente/`:
+
+```
+GEMINI_API_KEY=tu-key
+```
+
+Saca tu key en <https://aistudio.google.com/apikey>.
+
+> ⚠️ **Usa tu propia key; no compartan una entre todos.** El free tier da
+> **20 requests por día por proyecto**. Si el equipo entero usa la misma se
+> agota en minutos y la app empieza a fallar con 429 (se ve como
+> `.update(): UI stream is already closed` en la consola del server — es un
+> síntoma del 429, no un bug del código).
+
+### Opcional: servidor MCP
+
+`mcp-server/` no hace falta para correr la app: sin `DATABASE_URL`,
+`lib/mcp/mcp-client.ts` usa datos mock en memoria. Solo instálalo si vas a
+trabajar en la capa de datos — ver [Servidor MCP](#servidor-mcp) más abajo.
+(Ahí va `npm install` y no `npm ci`, porque ese paquete todavía no tiene
+lock file.)
+
 ## Estructura de carpetas
 
 ```
@@ -119,24 +179,6 @@ npm install
 cp .env.example .env   # editar con el DATABASE_URL real
 npm run seed
 ```
-
-## Cómo correr el front
-
-```bash
-npm install
-```
-
-`.env.local`:
-```
-GOOGLE_GENERATIVE_AI_API_KEY=...
-```
-
-```bash
-npm run dev
-```
-
-> Sin `DATABASE_URL`, todo funciona igual (mock en memoria) — no es
-> necesario para probar el flujo A2UI descrito arriba.
 
 ## Siguiente bloque A2UI
 
