@@ -23,20 +23,39 @@ client/ (Expo/RN)  --HTTP-->  server/ (agente/LLM)  --MCP(stdio)-->  mcp-server/
 
 ## Setup — empieza aquí
 
-### Backend (`server/`)
+### Atajo: un solo comando
+
+```bash
+node scripts/dev.js            # web
+node scripts/dev.js --android  # requiere emulador/celular ya conectado
+node scripts/dev.js --phone    # celular real en la misma WiFi
+```
+
+La primera vez, si falta `server/.env` o `client/.env`, los crea desde su
+`.env.example` y se detiene — edítalos con tus valores reales (ver abajo) y
+vuelve a correrlo. Después de eso, instala dependencias si hacen falta,
+levanta `server/`, detecta en qué puerto quedó, y sincroniza
+`EXPO_PUBLIC_API_URL` de `client/` automáticamente antes de levantarlo — así
+no se pierde tiempo con el gotcha de abajo.
+
+### Backend (`server/`) — paso a paso, si no usas el script
 
 ```bash
 cd server
 npm install
+cp .env.example .env
 ```
 
-Crea `server/.env`:
+Edita `server/.env` con tus llaves:
 
 ```
 GOOGLE_GENERATIVE_AI_API_KEY=tu-key
+OPENAI_API_KEY=tu-key
 ```
 
-Saca tu key en <https://aistudio.google.com/apikey>.
+Saca tu key de Gemini en <https://aistudio.google.com/apikey> y la de
+OpenAI en <https://platform.openai.com/api-keys> (se usa como respaldo si
+Gemini falla — ver más abajo).
 
 > ⚠️ **Usa tu propia key; no la compartan entre todos.** El free tier de
 > Gemini da muy pocas requests/día por modelo (vimos el límite real: 20
@@ -53,7 +72,7 @@ Sin `DATABASE_URL` definido, `lib/mcp/mcp-client.ts` usa datos mock en
 memoria automáticamente — pueden probar el flujo completo hoy mismo sin
 Postgres ni `mcp-server/` corriendo.
 
-### Cliente (`client/`)
+### Cliente (`client/`) — paso a paso, si no usas el script
 
 ```bash
 cd client
