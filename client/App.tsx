@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { fetch } from 'expo/fetch';
 import {
   ActivityIndicator,
   Platform,
@@ -11,132 +10,20 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { RastreadorMetas, type RastreadorMetasProps } from './components/RastreadorMetas';
-import { TarjetaSaldo, type TarjetaSaldoProps } from './components/TarjetaSaldo';
-import { ListaTransacciones, type ListaTransaccionesProps } from './components/ListaTransacciones';
-import { ComparativoGastos, type ComparativoGastosProps } from './components/ComparativoGastos';
-
-/**
- * Paso 3 del plan de migración: agregar bloques uno a la vez, todavía
- * renderizado directo por `switch`/tipo (sin catálogo/mini-SDK genérico
- * todavía — eso es el Paso 4, en otra rama).
- */
-type Mensaje =
-  | { id: string; tipo: 'texto'; rol: 'user' | 'asistente'; contenido: string }
-  | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: 'RastreadorMetas'; props: RastreadorMetasProps }
-  | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: 'TarjetaSaldo'; props: TarjetaSaldoProps }
-  | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: 'ListaTransacciones'; props: ListaTransaccionesProps }
-  | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: 'ComparativoGastos'; props: ComparativoGastosProps };
-
-const NOMBRES_SURFACE = [
-  'RastreadorMetas',
-  'TarjetaSaldo',
-  'ListaTransacciones',
-  'ComparativoGastos',
-] as const;
-
-/** Pinta el bloque nativo correspondiente — un `switch` concreto, no un catálogo genérico (Paso 4). */
-function renderBloque(m: Extract<Mensaje, { tipo: 'surface' }>) {
-  switch (m.nombre) {
-    case 'RastreadorMetas':
-      return <RastreadorMetas key={m.id} {...m.props} />;
-    case 'TarjetaSaldo':
-      return <TarjetaSaldo key={m.id} {...m.props} />;
-    case 'ListaTransacciones':
-      return <ListaTransacciones key={m.id} {...m.props} />;
-    case 'ComparativoGastos':
-      return <ComparativoGastos key={m.id} {...m.props} />;
-  }
-}
+import { useAgentStream } from './lib/a2ui/useAgentStream';
+import { SurfaceRenderer } from './lib/a2ui/SurfaceRenderer';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 
-/** crypto.randomUUID() no existe en Hermes/Android nativo (sí en web) — id simple en su lugar. */
-function uid() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 export default function App() {
   const [input, setInput] = useState('');
-  const [mensajes, setMensajes] = useState<Mensaje[]>([]);
-  const [cargando, setCargando] = useState(false);
+  const { mensajes, cargando, enviar } = useAgentStream(API_URL);
 
-  async function enviar() {
+  function handleEnviar() {
     const texto = input.trim();
     if (!texto || cargando) return;
-
     setInput('');
-    setCargando(true);
-    setMensajes((prev) => [
-      ...prev,
-      { id: uid(), tipo: 'texto', rol: 'user', contenido: texto },
-    ]);
-
-    try {
-      const resp = await fetch(`${API_URL}/api/agent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: texto }),
-      });
-
-      if (!resp.body) throw new Error('La respuesta no trae body (sin streaming).');
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lineas = buffer.split('\n');
-        buffer = lineas.pop() ?? '';
-
-        for (const linea of lineas) {
-          if (!linea.trim()) continue;
-          const evento = JSON.parse(linea);
-
-          if (
-            evento.type === 'surface' &&
-            NOMBRES_SURFACE.includes(evento.tipo)
-          ) {
-            setMensajes((prev) => [
-              ...prev,
-              {
-                id: uid(),
-                tipo: 'surface',
-                rol: 'asistente',
-                nombre: evento.tipo,
-                props: evento.props,
-              },
-            ]);
-          } else if (evento.type === 'text' && evento.content) {
-            setMensajes((prev) => [
-              ...prev,
-              { id: uid(), tipo: 'texto', rol: 'asistente', contenido: evento.content },
-            ]);
-          } else if (evento.type === 'error') {
-            setMensajes((prev) => [
-              ...prev,
-              { id: uid(), tipo: 'texto', rol: 'asistente', contenido: `⚠️ ${evento.message}` },
-            ]);
-          }
-        }
-      }
-    } catch (err) {
-      setMensajes((prev) => [
-        ...prev,
-        {
-          id: uid(),
-          tipo: 'texto',
-          rol: 'asistente',
-          contenido: `⚠️ Error de red: ${String(err)}`,
-        },
-      ]);
-    } finally {
-      setCargando(false);
-    }
+    enviar(texto);
   }
 
   return (
@@ -151,7 +38,7 @@ export default function App() {
         )}
         {mensajes.map((m) =>
           m.tipo === 'surface' ? (
-            renderBloque(m)
+            <SurfaceRenderer key={m.id} mensaje={m} />
           ) : (
             <Text
               key={m.id}
@@ -170,9 +57,9 @@ export default function App() {
           value={input}
           onChangeText={setInput}
           placeholder="¿Cómo voy con mis metas?"
-          onSubmitEditing={enviar}
+          onSubmitEditing={handleEnviar}
         />
-        <Pressable style={styles.boton} onPress={enviar} disabled={!input.trim() || cargando}>
+        <Pressable style={styles.boton} onPress={handleEnviar} disabled={!input.trim() || cargando}>
           <Text style={styles.botonTexto}>Enviar</Text>
         </Pressable>
       </View>
