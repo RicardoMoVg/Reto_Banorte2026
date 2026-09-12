@@ -44,7 +44,9 @@ export function BotonPin({
   if (!anclable || !pin) return null;
 
   function handleClick() {
-    if (anclado) return;
+    // Se vuelve a checar aquí: TS no arrastra el narrowing del early return
+    // hasta dentro de esta función.
+    if (!pin || anclado) return;
     pin(tipo, datos);
     setAnclado(true);
   }

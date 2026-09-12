@@ -1,10 +1,10 @@
 'use server';
 
-import { streamUI, getMutableAIState } from '@ai-sdk/rsc';
-import { anthropic } from '@ai-sdk/anthropic';
+import { streamUI, getMutableAIState } from 'ai/rsc';
+import { google } from '@ai-sdk/google';
 import { construirBloques } from '@/lib/ai/bloques';
 import { SYSTEM_PROMPT } from '@/lib/ai/system-prompt';
-import type { AI } from './ai';
+import type { HistorialMutable, MensajeUI } from '@/lib/ai/rsc-types';
 
 /**
  * El orquestador (capa "LLM" del A2UI). Recibe el mensaje del usuario, lo
@@ -18,13 +18,15 @@ import type { AI } from './ai';
  *
  * El catálogo de bloques vive en lib/ai/bloques.tsx.
  */
-export async function enviarMensaje(input: string) {
-  const history = getMutableAIState<typeof AI>();
+// El tipo de retorno es explícito a propósito: sin él, TS no puede cerrar
+// el ciclo AI -> enviarMensaje -> AI y todo termina en `any`.
+export async function enviarMensaje(input: string): Promise<MensajeUI> {
+  const history = getMutableAIState() as HistorialMutable;
 
   history.update([...history.get(), { role: 'user', content: input }]);
 
   const result = await streamUI({
-    model: anthropic('claude-sonnet-5'),
+    model: google('gemini-3.6-flash'),
     system: SYSTEM_PROMPT,
     messages: history.get(),
 

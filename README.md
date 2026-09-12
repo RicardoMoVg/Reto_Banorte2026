@@ -44,7 +44,7 @@ mosaico/
 └── tailwind.config.ts / tsconfig.json / next.config.mjs
 ```
 
-**Regla de oro:** `components/generative/` no importa nada de `ai`, `@ai-sdk/rsc`
+**Regla de oro:** `components/generative/` no importa nada de `ai`, `ai/rsc`
 ni `lib/mcp`. Solo recibe props y se ve bonito. Toda la orquestación vive en
 `app/acciones/agente.tsx`.
 
@@ -64,11 +64,13 @@ React Server Components — un Route Handler no puede serializar eso, solo
 arquitectura ya no hay `fetch`/`useChat` en el cliente: `page.tsx` llama
 directo a la Server Action.
 
-> Nota de versión: algunos tutoriales importan `streamUI`/`createAI` desde
-> `ai/rsc` (AI SDK v3). Con `ai@^4` que tenemos instalado, esos helpers viven
-> en el paquete separado `@ai-sdk/rsc` — es lo que usan `agente.tsx`/`ai.ts`.
-> Verifica que la versión de `@ai-sdk/rsc` en `package.json` sea compatible
-> con la de `ai` al instalar.
+> **Nota de versión (importante).** Con `ai@^4`, `streamUI`/`createAI` se
+> importan de **`ai/rsc`** (submódulo del propio paquete `ai`). El paquete
+> separado `@ai-sdk/rsc` pertenece a la generación **v5** y NO es compatible:
+> se trae su propio `@ai-sdk/provider@2` (`LanguageModelV2`) y choca con el
+> `@ai-sdk/provider@1` (`LanguageModelV1`) que usan `ai@4` y los providers
+> v1 — además de renombrar `parameters` a `inputSchema` en las tools.
+> Regla: todos los paquetes `@ai-sdk/*` deben ser de la misma generación.
 
 ## Cómo fluye una pregunta
 
@@ -126,7 +128,7 @@ npm install
 
 `.env.local`:
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_GENERATIVE_AI_API_KEY=...
 ```
 
 ```bash

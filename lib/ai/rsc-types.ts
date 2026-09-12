@@ -20,3 +20,16 @@ export type MensajeUI = {
   display: ReactNode;
 };
 export type UIState = MensajeUI[];
+
+/**
+ * Forma del AIState mutable que devuelve getMutableAIState().
+ *
+ * Lo tipamos nosotros en vez de usar `getMutableAIState<typeof AI>()`: eso
+ * crea una dependencia circular (AI depende de enviarMensaje, que dependería
+ * de AI) y TypeScript colapsa todo el árbol a `any`.
+ */
+export interface HistorialMutable {
+  get: () => AIState;
+  update: (estado: AIState) => void;
+  done: (estado: AIState) => void;
+}

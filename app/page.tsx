@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { useActions, useUIState } from '@ai-sdk/rsc';
+import { useActions, useUIState } from 'ai/rsc';
 import { SendHorizontal } from 'lucide-react';
 import { DashboardComponible } from '@/components/dashboard/DashboardComponible';
 import { PinProvider } from '@/components/dashboard/pin-context';
