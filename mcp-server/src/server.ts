@@ -16,22 +16,101 @@ const server = new McpServer({
 
 server.tool(
   'get_metas',
-  'Obtiene las metas de ahorro del usuario junto con su porcentaje de avance.',
+  'Obtiene las metas de ahorro del usuario junto con su porcentaje de avance. Por defecto no incluye las archivadas.',
   {
     userId: z.string().describe('Id del usuario'),
+    incluirArchivadas: z.boolean().default(false).describe('Si es true, incluye también las metas archivadas'),
   },
-  async ({ userId }) => {
+  async ({ userId, incluirArchivadas }) => {
     const { rows } = await pool.query(
-      `select id, titulo, monto_actual, monto_objetivo,
+      `select id, titulo, monto_actual, monto_objetivo, estatus,
               round((monto_actual::numeric / monto_objetivo) * 100) as porcentaje
        from metas
        where usuario_id = $1
+         and (estatus <> 'archivada' or $2)
        order by porcentaje asc`,
-      [userId],
+      [userId, incluirArchivadas],
     );
 
     return {
       content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
+  'crear_meta',
+  'Crea una nueva meta de ahorro para el usuario.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    titulo: z.string().describe('Nombre de la meta, ej. "Fondo de emergencia"'),
+    montoObjetivo: z.number().positive().describe('Monto a alcanzar'),
+    montoInicial: z.number().min(0).default(0).describe('Con cuánto arranca la meta, si ya tenía algo ahorrado'),
+  },
+  async ({ userId, titulo, montoObjetivo, montoInicial }) => {
+    const { rows } = await pool.query(
+      `insert into metas (id, usuario_id, titulo, monto_actual, monto_objetivo)
+       values ('meta-' || gen_random_uuid(), $1, $2, $3, $4)
+       returning id, titulo, monto_actual, monto_objetivo, estatus`,
+      [userId, titulo, montoInicial, montoObjetivo],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'aportar_a_meta',
+  'Suma un aporte al monto actual de una meta activa. Si con el aporte se alcanza o supera el objetivo, la marca como completada.',
+  {
+    metaId: z.string().describe('Id de la meta'),
+    monto: z.number().positive().describe('Cantidad a aportar'),
+  },
+  async ({ metaId, monto }) => {
+    const { rows } = await pool.query(
+      `update metas
+       set monto_actual = monto_actual + $2,
+           estatus = case when monto_actual + $2 >= monto_objetivo then 'completada' else estatus end
+       where id = $1 and estatus = 'activa'
+       returning id, titulo, monto_actual, monto_objetivo, estatus`,
+      [metaId, monto],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Meta no encontrada o no está activa.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'archivar_meta',
+  'Archiva una meta (borrado lógico -- deja de aparecer en get_metas, pero no se borra su historial).',
+  {
+    metaId: z.string().describe('Id de la meta'),
+  },
+  async ({ metaId }) => {
+    const { rows } = await pool.query(
+      `update metas set estatus = 'archivada' where id = $1
+       returning id, titulo, monto_actual, monto_objetivo, estatus`,
+      [metaId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Meta no encontrada.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
     };
   },
 );
@@ -236,20 +315,69 @@ server.tool(
 
 server.tool(
   'get_contactos_pago',
-  'Obtiene los contactos de pago guardados del usuario.',
+  'Obtiene los contactos de pago guardados del usuario. Por defecto no incluye los desactivados.',
   {
     userId: z.string().describe('Id del usuario'),
+    incluirInactivos: z.boolean().default(false).describe('Si es true, incluye también los contactos desactivados'),
   },
-  async ({ userId }) => {
+  async ({ userId, incluirInactivos }) => {
     const { rows } = await pool.query(
-      `select id, nombre, clabe
+      `select id, nombre, clabe, activo
        from contactos_pago
-       where usuario_id = $1`,
-      [userId],
+       where usuario_id = $1
+         and (activo or $2)`,
+      [userId, incluirInactivos],
     );
 
     return {
       content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
+  'crear_contacto_pago',
+  'Guarda un nuevo contacto de pago para el usuario.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    nombre: z.string().describe('Nombre del contacto'),
+    clabe: z.string().optional().describe('CLABE interbancaria del contacto, si se conoce'),
+  },
+  async ({ userId, nombre, clabe }) => {
+    const { rows } = await pool.query(
+      `insert into contactos_pago (id, usuario_id, nombre, clabe)
+       values ('contacto-' || gen_random_uuid(), $1, $2, $3)
+       returning id, nombre, clabe, activo`,
+      [userId, nombre, clabe ?? null],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'desactivar_contacto_pago',
+  'Desactiva un contacto de pago (borrado lógico -- deja de aparecer en get_contactos_pago, pero transferencias pasadas lo siguen referenciando).',
+  {
+    contactoId: z.string().describe('Id del contacto'),
+  },
+  async ({ contactoId }) => {
+    const { rows } = await pool.query(
+      `update contactos_pago set activo = false where id = $1
+       returning id, nombre, clabe, activo`,
+      [contactoId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Contacto no encontrado.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
     };
   },
 );
@@ -261,7 +389,7 @@ server.tool(
     userId: z.string().describe('Id del usuario'),
     limite: z.number().int().positive().max(50).default(10),
     tipo: z.enum(['enviada', 'recibida']).optional().describe('Filtra solo transferencias enviadas o solo recibidas (cobros)'),
-    estatus: z.enum(['pendiente', 'completada', 'fallida']).optional().describe('Filtra por estatus de la transferencia'),
+    estatus: z.enum(['pendiente', 'completada', 'fallida', 'cancelada']).optional().describe('Filtra por estatus de la transferencia'),
   },
   async ({ userId, limite, tipo, estatus }) => {
     const condiciones = ['t.usuario_id = $1'];
@@ -289,6 +417,67 @@ server.tool(
 
     return {
       content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
+  'crear_transferencia',
+  'Registra una transferencia del usuario hacia uno de sus contactos de pago guardados.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    contactoId: z.string().describe('Id del contacto de pago (debe pertenecer al usuario)'),
+    monto: z.number().positive().describe('Monto a transferir'),
+    concepto: z.string().optional().describe('Concepto/motivo de la transferencia'),
+    tipo: z.enum(['enviada', 'recibida']).default('enviada').describe('"recibida" es un cobro'),
+  },
+  async ({ userId, contactoId, monto, concepto, tipo }) => {
+    const contacto = await pool.query(
+      `select id from contactos_pago where id = $1 and usuario_id = $2 and activo`,
+      [contactoId, userId],
+    );
+
+    if (contacto.rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Contacto no encontrado, inactivo, o no pertenece al usuario.' }) }],
+      };
+    }
+
+    const { rows } = await pool.query(
+      `insert into transferencias (id, usuario_id, contacto_id, tipo, monto, concepto, estatus)
+       values ('transferencia-' || gen_random_uuid(), $1, $2, $3, $4, $5, 'completada')
+       returning id, tipo, monto, concepto, estatus, fecha`,
+      [userId, contactoId, tipo, monto, concepto ?? null],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'cancelar_transferencia',
+  'Cancela una transferencia que sigue pendiente (borrado lógico -- una transferencia ya completada no se puede cancelar).',
+  {
+    transferenciaId: z.string().describe('Id de la transferencia'),
+  },
+  async ({ transferenciaId }) => {
+    const { rows } = await pool.query(
+      `update transferencias set estatus = 'cancelada'
+       where id = $1 and estatus = 'pendiente'
+       returning id, tipo, monto, concepto, estatus, fecha`,
+      [transferenciaId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Transferencia no encontrada o ya no está pendiente.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
     };
   },
 );
