@@ -108,7 +108,7 @@ export function buildA2uiTools(userId: string) {
         'financiero del usuario. Úsala siempre que pregunte por su avance, ' +
         'en vez de describir el porcentaje en texto.',
       parameters: schemaProgresoMeta,
-      execute: async ({ metaId, mensajeAgente }) => {
+      execute: async ({ metaId, agregarAInicio, mensajeAgente }) => {
         const metas = await getMetasUsuario(userId);
         // Si el modelo manda un metaId que no existe (a veces inventa un id
         // "plausible" en vez de dejarlo vacío), no truena: cae a la meta con
@@ -125,6 +125,7 @@ export function buildA2uiTools(userId: string) {
             titulo: meta.titulo,
             porcentaje: meta.porcentaje,
             mensajeAgente,
+            agregarAInicio,
           },
         };
       },
@@ -135,7 +136,7 @@ export function buildA2uiTools(userId: string) {
         'Muestra un monto financiero destacado: saldo disponible, total ' +
         'gastado en el mes, dinero ahorrado, etc.',
       parameters: schemaSaldo,
-      execute: async ({ titulo, mensajeAgente }) => {
+      execute: async ({ titulo, agregarAInicio, mensajeAgente }) => {
         const saldo = await getSaldoUsuario(userId);
 
         return {
@@ -144,6 +145,7 @@ export function buildA2uiTools(userId: string) {
             titulo,
             monto: saldo,
             mensajeAgente,
+            agregarAInicio,
           },
         };
       },
@@ -154,7 +156,7 @@ export function buildA2uiTools(userId: string) {
         'Muestra una lista de movimientos recientes del usuario. Úsala ' +
         'cuando pregunte en qué gastó, sus últimos cargos o sus ingresos.',
       parameters: schemaTransacciones,
-      execute: async ({ titulo, limite, categoria, mensajeAgente }) => {
+      execute: async ({ titulo, limite, categoria, agregarAInicio, mensajeAgente }) => {
         const transacciones = await getTransaccionesRecientes(userId, {
           limite: limite ?? 10,
           categoria,
@@ -170,6 +172,7 @@ export function buildA2uiTools(userId: string) {
               categoria: t.categoria,
             })),
             mensajeAgente,
+            agregarAInicio,
           },
         };
       },
@@ -181,7 +184,7 @@ export function buildA2uiTools(userId: string) {
         'por categoría. Úsala cuando pregunte en qué se le va el dinero o ' +
         'pida comparar categorías.',
       parameters: schemaComparativoGastos,
-      execute: async ({ titulo, mensajeAgente }) => {
+      execute: async ({ titulo, agregarAInicio, mensajeAgente }) => {
         // No existe una tool de MCP para "gasto por categoría" — se
         // agrega aquí en JS a partir de las transacciones, en vez de
         // agregar una tabla/query nueva en mcp-server/ (ver plan, Paso 3c).
@@ -201,7 +204,7 @@ export function buildA2uiTools(userId: string) {
 
         return {
           tipo: 'ComparativoGastos' as const,
-          props: { titulo, categorias, mensajeAgente },
+          props: { titulo, categorias, mensajeAgente, agregarAInicio },
         };
       },
     }),

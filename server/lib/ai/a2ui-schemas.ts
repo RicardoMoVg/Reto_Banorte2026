@@ -7,6 +7,16 @@ import { z } from 'zod';
  * puede/debe elegir el modelo (nunca datos crudos, esos vienen del MCP).
  */
 export const schemaProgresoMeta = z.object({
+  agregarAInicio: z
+    .boolean()
+    .optional()
+    .describe(
+      'true SOLO si el usuario pidio que este componente quede fijo en su pantalla de inicio ' +
+        '("ponlo en mi inicio", "quiero verlo siempre", "agregalo a mi tablero"). ' +
+        'Una consulta normal ("cuanto gaste?") va SIN esto: el bloque se queda en la ' +
+        'conversacion. No lo pongas por tu cuenta -- marcarlo hace que la app le pregunte al ' +
+        'usuario si lo agrega, y preguntarle cuando no lo pidio es ruido.',
+    ),
   metaId: z
     .string()
     .optional()
@@ -19,6 +29,16 @@ export const schemaProgresoMeta = z.object({
 });
 
 export const schemaSaldo = z.object({
+  agregarAInicio: z
+    .boolean()
+    .optional()
+    .describe(
+      'true SOLO si el usuario pidio que este componente quede fijo en su pantalla de inicio ' +
+        '("ponlo en mi inicio", "quiero verlo siempre", "agregalo a mi tablero"). ' +
+        'Una consulta normal ("cuanto gaste?") va SIN esto: el bloque se queda en la ' +
+        'conversacion. No lo pongas por tu cuenta -- marcarlo hace que la app le pregunte al ' +
+        'usuario si lo agrega, y preguntarle cuando no lo pidio es ruido.',
+    ),
   titulo: z
     .string()
     .describe('Qué representa el monto, ej. "Saldo disponible", "Total del mes".'),
@@ -26,6 +46,16 @@ export const schemaSaldo = z.object({
 });
 
 export const schemaTransacciones = z.object({
+  agregarAInicio: z
+    .boolean()
+    .optional()
+    .describe(
+      'true SOLO si el usuario pidio que este componente quede fijo en su pantalla de inicio ' +
+        '("ponlo en mi inicio", "quiero verlo siempre", "agregalo a mi tablero"). ' +
+        'Una consulta normal ("cuanto gaste?") va SIN esto: el bloque se queda en la ' +
+        'conversacion. No lo pongas por tu cuenta -- marcarlo hace que la app le pregunte al ' +
+        'usuario si lo agrega, y preguntarle cuando no lo pidio es ruido.',
+    ),
   titulo: z
     .string()
     .describe('Encabezado de la lista, ej. "Últimos movimientos".'),
@@ -46,6 +76,16 @@ export const schemaTransacciones = z.object({
 });
 
 export const schemaComparativoGastos = z.object({
+  agregarAInicio: z
+    .boolean()
+    .optional()
+    .describe(
+      'true SOLO si el usuario pidio que este componente quede fijo en su pantalla de inicio ' +
+        '("ponlo en mi inicio", "quiero verlo siempre", "agregalo a mi tablero"). ' +
+        'Una consulta normal ("cuanto gaste?") va SIN esto: el bloque se queda en la ' +
+        'conversacion. No lo pongas por tu cuenta -- marcarlo hace que la app le pregunte al ' +
+        'usuario si lo agrega, y preguntarle cuando no lo pidio es ruido.',
+    ),
   titulo: z
     .string()
     .describe('Encabezado, ej. "Tus gastos de septiembre".'),

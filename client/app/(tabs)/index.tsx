@@ -1,5 +1,4 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,12 +6,12 @@ import { Boton } from '../../components/ui/Boton';
 import { Chip } from '../../components/ui/Chip';
 import { PantallaMarca } from '../../components/ui/PantallaMarca';
 import { Tarjeta } from '../../components/ui/Tarjeta';
-import { esBloqueDeAccion } from '../../components/chat/tipos';
 import { SurfaceRenderer } from '../../lib/a2ui/SurfaceRenderer';
-import type { Mensaje } from '../../lib/a2ui/types';
 import { useAgent } from '../../lib/a2ui/AgentProvider';
+import { useTablero } from '../../lib/a2ui/TableroProvider';
 import { primerNombre, saludo } from '../../lib/sesion/perfilDemo';
 import { useSesion } from '../../lib/sesion/SesionProvider';
+import { useChatPanel } from '../../lib/ui/ChatPanelProvider';
 import { colores, espacio, radio, tipografia, vidrio } from '../../lib/ui/theme';
 
 /**
@@ -27,9 +26,6 @@ const SUGERENCIAS = [
   '¿En qué gasté últimamente?',
   '¿En qué se me va el dinero?',
 ];
-
-/** Cuántos bloques caben en el tablero antes de empezar a tirar los viejos. */
-const MAX_BLOQUES = 4;
 
 /**
  * Ventana de Inicio: el tablero.
@@ -46,33 +42,26 @@ const MAX_BLOQUES = 4;
  * claros de `tipografia` — sobre el degradado hay que usar blanco.
  */
 export default function Inicio() {
-  const { mensajes, enviar } = useAgent();
+  const { enviar } = useAgent();
   const { perfil } = useSesion();
+  const { abrir: abrirChat } = useChatPanel();
   const insets = useSafeAreaInsets();
   const [avisos, setAvisos] = useState(false);
 
   /**
-   * Los bloques que el agente ya generó en esta sesión, más reciente primero.
+   * Lo que el usuario decidió fijar aquí, más reciente primero.
    *
-   * Esto NO es todavía el dashboard anclado de constitution.md 3.2: ahí el
-   * usuario elige qué fijar y se guarda la *receta* para regenerarlo
-   * (tool + parámetros) en Postgres, nunca el número ya resuelto. Mientras
-   * eso no exista, mostrar los últimos bloques de la sesión es correcto —
-   * son resultados vivos de esta misma corrida, no un snapshot viejo.
+   * Ya NO son "los últimos bloques del chat": eso mezclaba preguntar algo
+   * de pasada con quererlo siempre a la vista, y cualquier consulta
+   * ensuciaba el tablero. Ahora el agente PROPONE (marca el bloque cuando
+   * el usuario pidió agregarlo) y el usuario CONFIRMA desde la
+   * conversación; aquí solo llega lo aceptado.
    */
-  // El predicado va tipado (`m is ...`) para que TypeScript sepa que lo que
-  // queda son surfaces; con un booleano pelón pierde el estrechamiento.
-  const bloques = mensajes
-    .filter(
-      (m): m is Extract<Mensaje, { tipo: 'surface' }> =>
-        m.tipo === 'surface' && !esBloqueDeAccion(m.nombre),
-    )
-    .slice(-MAX_BLOQUES)
-    .reverse();
+  const { bloques, desanclar } = useTablero();
 
   function preguntar(texto: string) {
     enviar(texto);
-    router.push('/chat');
+    abrirChat();
   }
 
   return (
@@ -110,20 +99,33 @@ export default function Inicio() {
               <Ionicons name="grid-outline" size={26} color={colores.marca} />
               <Text style={styles.vacioTitulo}>Tu tablero está vacío</Text>
               <Text style={styles.vacioTexto}>
-                Todo lo que aparece aquí lo arma el agente con datos reales de tu cuenta. Pídele
-                algo y el bloque se queda en esta vista.
+                Pídele a Mosaico que agregue algo aquí — «pon mis gastos del mes en mi inicio»
+                — y cuando lo proponga, lo aceptas y se queda fijo.
               </Text>
               <Boton
                 titulo="Hablar con Mosaico"
-                onPress={() => router.push('/chat')}
+                onPress={abrirChat}
                 style={styles.vacioBoton}
               />
             </View>
           </Tarjeta>
         ) : (
           <View style={styles.bloques}>
-            {bloques.map((m) => (
-              <SurfaceRenderer key={m.id} mensaje={m} />
+            {bloques.map((b) => (
+              <View key={b.id}>
+                <SurfaceRenderer
+                  mensaje={{ id: b.id, tipo: 'surface', rol: 'asistente', nombre: b.nombre, props: b.props }}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Quitar ${b.nombre} del inicio`}
+                  hitSlop={espacio.sm}
+                  onPress={() => desanclar(b.id)}
+                  style={({ pressed }) => [styles.quitar, pressed && styles.presionado]}
+                >
+                  <Ionicons name="close" size={14} color={colores.marca} />
+                </Pressable>
+              </View>
             ))}
           </View>
         )}
@@ -138,8 +140,8 @@ export default function Inicio() {
         </View>
 
         <Text style={styles.nota}>
-          El tablero muestra los últimos {MAX_BLOQUES} bloques de esta sesión y se vacía al
-          recargar. Anclarlos para que sobrevivan es el siguiente paso.
+          Lo que fijas aquí vive en este dispositivo y se pierde al recargar: todavía no se
+          guarda en tu cuenta.
         </Text>
       </ScrollView>
 
@@ -206,6 +208,21 @@ const styles = StyleSheet.create({
 
   scroll: { paddingHorizontal: espacio.lg, gap: espacio.xl },
   bloques: { gap: espacio.md },
+  /** Quitar del tablero: chrome del tablero, no del bloque. Ningún bloque
+   *  A2UI tiene que saber que existe un tablero. */
+  quitar: {
+    position: 'absolute',
+    top: -espacio.sm,
+    right: -espacio.sm,
+    width: 26,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radio.completo,
+    borderWidth: 1,
+    borderColor: colores.borde,
+    backgroundColor: colores.superficie,
+  },
 
   vacio: { alignItems: 'center', gap: espacio.sm, paddingVertical: espacio.sm },
   vacioTitulo: { ...tipografia.cuerpo, fontWeight: '700', marginTop: espacio.xs },

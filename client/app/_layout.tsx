@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AccionesProvider } from '../lib/a2ui/AccionesProvider';
 import { AgentProvider } from '../lib/a2ui/AgentProvider';
+import { TableroProvider } from '../lib/a2ui/TableroProvider';
 import { SesionProvider, useSesion } from '../lib/sesion/SesionProvider';
 import { colores } from '../lib/ui/theme';
 
@@ -21,10 +22,12 @@ export default function LayoutRaiz() {
         <AgentProvider>
           {/* Va DENTRO de AgentProvider: responder una propuesta le manda un
               mensaje al agente, así que necesita su `enviar`. */}
+          <TableroProvider>
           <AccionesProvider>
             <StatusBar style="dark" />
             <Navegador />
           </AccionesProvider>
+          </TableroProvider>
         </AgentProvider>
       </SesionProvider>
     </SafeAreaProvider>

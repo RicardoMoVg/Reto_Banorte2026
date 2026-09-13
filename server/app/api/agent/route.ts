@@ -118,6 +118,23 @@ async function* generarEventos(
       system: SYSTEM_PROMPT,
       messages: [...turnosPrevios, { role: 'user', content: message }],
       tools,
+      /**
+       * Cuantas rondas de tools puede encadenar el modelo en un turno.
+       *
+       * Se queda en 1 A PROPOSITO, y varios bloques por turno igual
+       * funcionan: el modelo puede emitir VARIAS llamadas a tools en una
+       * sola ronda (llamadas paralelas), y todas se ejecutan. Lo que hacia
+       * falta no era subir este numero, sino decirselo en el system prompt.
+       *
+       * Subirlo rompe con Gemini 3: al mandar de vuelta los resultados para
+       * una segunda ronda, la API exige un `thought_signature` en las
+       * partes functionCall que el @ai-sdk/google instalado no propaga, y
+       * revienta con "Function call is missing a thought_signature" DESPUES
+       * de haber emitido los bloques -- el usuario veia sus tarjetas y
+       * luego un error rojo. Si algun dia hace falta encadenar de verdad
+       * (consultar ids y luego referenciarlos), hay que actualizar el
+       * proveedor primero.
+       */
       maxSteps: 1,
     });
 

@@ -14,6 +14,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pantalla } from '../components/ui/Pantalla';
+import { PropuestaDeAnclaje } from '../components/chat/PropuestaDeAnclaje';
 import { SurfaceRenderer } from '../lib/a2ui/SurfaceRenderer';
 import { useAgent } from '../lib/a2ui/AgentProvider';
 import { colores, espacio, radio, tipografia } from '../lib/ui/theme';
@@ -88,7 +89,14 @@ export default function Chat() {
 
           {mensajes.map((m) =>
             m.tipo === 'surface' ? (
-              <SurfaceRenderer key={m.id} mensaje={m} />
+                <View key={m.id}>
+                  <SurfaceRenderer mensaje={m} />
+                  {m.props.agregarAInicio === true ? (
+                    <PropuestaDeAnclaje
+                      bloque={{ id: m.id, nombre: m.nombre, props: m.props }}
+                    />
+                  ) : null}
+                </View>
             ) : (
               <View
                 key={m.id}
