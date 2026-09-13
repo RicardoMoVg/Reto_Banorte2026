@@ -16,8 +16,20 @@
 
 create table if not exists usuarios (
   id text primary key,
-  nombre text not null
+  nombre text not null,
+  usuario text,              -- @handle que el titular elige, ej. '@ricardo.moreno'
+  telefono text,
+  fecha_nacimiento date,
+  creado_en timestamptz not null default now() -- de aquí sale "cliente desde"
 );
+
+-- migración idempotente para bases ya desplegadas antes de que existieran
+-- estos campos (antes solo `nombre`, ver constitution.md -- perfil real del
+-- titular en vez de datos de ejemplo del lado del cliente).
+alter table usuarios add column if not exists usuario text;
+alter table usuarios add column if not exists telefono text;
+alter table usuarios add column if not exists fecha_nacimiento date;
+alter table usuarios add column if not exists creado_en timestamptz not null default now();
 
 -- Dashboard "anclado" del usuario (Paso 5, pendiente en el cliente). Guarda
 -- la RECETA para regenerar un bloque -- nunca el valor numérico resuelto

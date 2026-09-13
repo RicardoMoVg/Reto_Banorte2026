@@ -64,6 +64,12 @@ export interface UsuarioApi {
   id: string;
   email: string | null;
   nombre: string | null;
+  usuario: string | null;
+  telefono: string | null;
+  /** ISO `AAAA-MM-DD`, o `null` si no lo ha registrado. */
+  fechaNacimiento: string | null;
+  /** ISO. De aquí sale "cliente desde" -- se formatea al mostrarlo. */
+  creadoEn: string | null;
 }
 
 export interface SesionApi {
@@ -97,6 +103,19 @@ export function logout(accessToken: string, refreshToken: string) {
     method: 'POST',
     body: JSON.stringify({ accessToken, refreshToken }),
   });
+}
+
+export interface CambiosPerfil {
+  nombre?: string;
+  usuario?: string;
+  telefono?: string;
+  /** ISO `AAAA-MM-DD`. */
+  fechaNacimiento?: string;
+}
+
+/** `PUT /api/auth/me` -- persiste en Postgres. El correo no se edita aquí, lo maneja Supabase Auth. */
+export function actualizarPerfil(cambios: CambiosPerfil) {
+  return pedir<UsuarioApi>('/api/auth/me', { method: 'PUT', body: JSON.stringify(cambios) });
 }
 
 export interface WidgetDashboardApi {

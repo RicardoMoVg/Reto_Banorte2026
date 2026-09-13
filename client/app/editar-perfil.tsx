@@ -15,11 +15,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CampoMarca } from '../components/ui/CampoMarca';
 import { PantallaMarca } from '../components/ui/PantallaMarca';
 import { useSesion } from '../lib/sesion/SesionProvider';
+import { ErrorApi } from '../lib/api/rest';
 import {
-  CORREO_VALIDO,
   aFormatoCorto,
   aISO,
   edad,
+  formatearMesAnio,
   iniciales,
   mascaraFecha,
   normalizarTelefono,
@@ -28,7 +29,7 @@ import {
 import { colores, espacio, radio, vidrio } from '../lib/ui/theme';
 
 /** Un mensaje por campo; vacío = campo válido. */
-type Errores = Partial<Record<'nombre' | 'usuario' | 'correo' | 'nacimiento' | 'telefono', string>>;
+type Errores = Partial<Record<'nombre' | 'usuario' | 'nacimiento' | 'telefono', string>>;
 
 const EDAD_MINIMA = 18;
 
@@ -49,16 +50,16 @@ export default function EditarPerfil() {
   const insets = useSafeAreaInsets();
 
   const refUsuario = useRef<TextInput>(null);
-  const refCorreo = useRef<TextInput>(null);
   const refNacimiento = useRef<TextInput>(null);
   const refTelefono = useRef<TextInput>(null);
 
   const [nombre, setNombre] = useState(perfil?.nombre ?? '');
   const [usuario, setUsuario] = useState(perfil?.usuario ?? '');
-  const [correo, setCorreo] = useState(perfil?.correo ?? '');
   const [nacimiento, setNacimiento] = useState(aFormatoCorto(perfil?.nacimiento ?? ''));
   const [telefono, setTelefono] = useState(perfil?.telefono ?? '');
   const [errores, setErrores] = useState<Errores>({});
+  const [errorGuardado, setErrorGuardado] = useState('');
+  const [guardando, setGuardando] = useState(false);
 
   // El guard de app/_layout.tsx hace que esto no pase en la práctica, pero
   // sin la comprobación el resto del componente tendría que usar `perfil?.`
@@ -67,17 +68,15 @@ export default function EditarPerfil() {
 
   const cambio =
     nombre !== perfil.nombre ||
-    usuario !== perfil.usuario ||
-    correo !== perfil.correo ||
-    nacimiento !== aFormatoCorto(perfil.nacimiento) ||
-    telefono !== perfil.telefono;
+    usuario !== (perfil.usuario ?? '') ||
+    nacimiento !== aFormatoCorto(perfil.nacimiento ?? '') ||
+    telefono !== (perfil.telefono ?? '');
 
   function validar(): Errores {
     const e: Errores = {};
 
     if (nombre.trim().length < 3) e.nombre = 'Escribe tu nombre completo.';
     if (usuario.trim().replace('@', '').length < 3) e.usuario = 'Mínimo 3 caracteres.';
-    if (!CORREO_VALIDO.test(correo.trim())) e.correo = 'Escribe un correo electrónico válido.';
 
     const iso = aISO(nacimiento);
     if (!iso) {
@@ -96,21 +95,27 @@ export default function EditarPerfil() {
     return e;
   }
 
-  function handleGuardar() {
+  async function handleGuardar() {
     const e = validar();
     setErrores(e);
     if (Object.keys(e).length > 0) return;
 
-    actualizarPerfil({
-      nombre: nombre.trim(),
-      // Se normaliza la arroba para que no haya "@@ricardo" ni "ricardo".
-      usuario: `@${usuario.trim().replace(/^@+/, '')}`,
-      correo: correo.trim(),
-      nacimiento: aISO(nacimiento)!,
-      telefono: normalizarTelefono(telefono),
-    });
-
-    router.back();
+    setErrorGuardado('');
+    setGuardando(true);
+    try {
+      await actualizarPerfil({
+        nombre: nombre.trim(),
+        // Se normaliza la arroba para que no haya "@@ricardo" ni "ricardo".
+        usuario: `@${usuario.trim().replace(/^@+/, '')}`,
+        nacimiento: aISO(nacimiento)!,
+        telefono: normalizarTelefono(telefono),
+      });
+      router.back();
+    } catch (err) {
+      setErrorGuardado(err instanceof ErrorApi ? err.message : 'No se pudo guardar. Intenta de nuevo.');
+    } finally {
+      setGuardando(false);
+    }
   }
 
   return (
@@ -158,22 +163,6 @@ export default function EditarPerfil() {
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="next"
-              onSubmitEditing={() => refCorreo.current?.focus()}
-            />
-
-            <CampoMarca
-              ref={refCorreo}
-              etiqueta="Correo electrónico:"
-              value={correo}
-              onChangeText={setCorreo}
-              error={errores.correo}
-              placeholder="tucorreo@ejemplo.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
-              returnKeyType="next"
               onSubmitEditing={() => refNacimiento.current?.focus()}
             />
 
@@ -210,25 +199,35 @@ export default function EditarPerfil() {
             <View style={styles.fijo}>
               <Ionicons name="lock-closed-outline" size={16} color={vidrio.textoTenue} />
               <Text style={styles.fijoTexto}>
-                Cliente desde {perfil.clienteDesde} — lo fija el banco, no se puede editar.
+                {perfil.correo} — el correo lo administra tu cuenta, no se edita aquí.
+              </Text>
+            </View>
+
+            <View style={styles.fijo}>
+              <Ionicons name="lock-closed-outline" size={16} color={vidrio.textoTenue} />
+              <Text style={styles.fijoTexto}>
+                Cliente desde {formatearMesAnio(perfil.clienteDesde)} — lo fija el banco, no se
+                puede editar.
               </Text>
             </View>
           </View>
+
+          {errorGuardado ? <Text style={styles.error}>{errorGuardado}</Text> : null}
 
           <View style={styles.acciones}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Guardar cambios"
-              accessibilityState={{ disabled: !cambio }}
+              accessibilityState={{ disabled: !cambio || guardando }}
               onPress={handleGuardar}
-              disabled={!cambio}
+              disabled={!cambio || guardando}
               style={({ pressed }) => [
                 styles.guardar,
                 pressed && styles.presionado,
-                !cambio && styles.inactivo,
+                (!cambio || guardando) && styles.inactivo,
               ]}
             >
-              <Text style={styles.guardarTexto}>Guardar cambios</Text>
+              <Text style={styles.guardarTexto}>{guardando ? 'Guardando…' : 'Guardar cambios'}</Text>
             </Pressable>
 
             <Pressable
@@ -242,8 +241,8 @@ export default function EditarPerfil() {
           </View>
 
           <Text style={styles.nota}>
-            Los cambios viven solo en esta sesión: no hay backend que los reciba todavía, así que
-            se pierden al cerrar sesión o recargar la app.
+            Nombre, usuario, teléfono y fecha de nacimiento se guardan en Postgres al presionar
+            "Guardar cambios".
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -277,6 +276,8 @@ const styles = StyleSheet.create({
 
   fijo: { flexDirection: 'row', alignItems: 'center', gap: espacio.sm },
   fijoTexto: { flexShrink: 1, fontSize: 12, lineHeight: 16, color: vidrio.textoTenue },
+
+  error: { fontSize: 12, lineHeight: 16, textAlign: 'center', color: '#ffb4b4' },
 
   acciones: { gap: espacio.md },
   guardar: {

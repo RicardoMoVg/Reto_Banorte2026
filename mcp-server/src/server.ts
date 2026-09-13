@@ -17,19 +17,28 @@ const server = new McpServer({
 
 // --- Compartido ---
 
+// `fecha_nacimiento::text`, no la columna `date` cruda: sin el cast, el
+// driver `pg` la parsea a un `Date` de JS a medianoche en la zona horaria
+// del SERVIDOR, y JSON.stringify la vuelve a serializar en UTC -- el
+// resultado ("1998-03-14T06:00:00.000Z" en un servidor UTC-6, por ejemplo)
+// ya no es el `AAAA-MM-DD` que espera `client/lib/sesion/perfilDemo.ts`, y
+// según el huso horario del servidor hasta puede correrse de día.
+const CAMPOS_USUARIO = "id, nombre, usuario, telefono, fecha_nacimiento::text as fecha_nacimiento, creado_en";
+
 server.tool(
   'crear_usuario',
   'Crea el perfil de banca (fila en usuarios) para un usuario recién registrado en Supabase Auth. Idempotente.',
   {
     userId: z.string().describe('Id del usuario -- debe ser el mismo uuid que asignó Supabase Auth al registrarse'),
     nombre: z.string(),
+    usuario: z.string().optional().describe('@handle sugerido, ej. a partir del correo.'),
   },
-  async ({ userId, nombre }) => {
+  async ({ userId, nombre, usuario }) => {
     const { rows } = await pool.query(
-      `insert into usuarios (id, nombre) values ($1, $2)
+      `insert into usuarios (id, nombre, usuario) values ($1, $2, $3)
        on conflict (id) do nothing
-       returning id, nombre`,
-      [userId, nombre],
+       returning ${CAMPOS_USUARIO}`,
+      [userId, nombre, usuario ?? null],
     );
 
     if (rows.length > 0) {
@@ -37,20 +46,52 @@ server.tool(
     }
 
     // ya existía (conflicto) -- regresar la fila tal cual está.
-    const existente = await pool.query(`select id, nombre from usuarios where id = $1`, [userId]);
+    const existente = await pool.query(`select ${CAMPOS_USUARIO} from usuarios where id = $1`, [userId]);
     return { content: [{ type: 'text', text: JSON.stringify(existente.rows[0]) }] };
   },
 );
 
 server.tool(
   'get_usuario',
-  'Obtiene el perfil de banca (nombre) de un usuario ya autenticado.',
+  'Obtiene el perfil de banca completo (nombre, usuario, telefono, fecha de nacimiento, cliente desde) de un usuario ya autenticado.',
   {
     userId: z.string().describe('Id del usuario'),
   },
   async ({ userId }) => {
-    const { rows } = await pool.query(`select id, nombre from usuarios where id = $1`, [userId]);
+    const { rows } = await pool.query(`select ${CAMPOS_USUARIO} from usuarios where id = $1`, [userId]);
     return { content: [{ type: 'text', text: JSON.stringify(rows[0] ?? null) }] };
+  },
+);
+
+server.tool(
+  'actualizar_perfil',
+  'Actualiza los campos editables del perfil de banca. Solo cambia los campos que vengan definidos -- el resto se queda igual.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    nombre: z.string().optional(),
+    usuario: z.string().optional(),
+    telefono: z.string().optional(),
+    fechaNacimiento: z.string().optional().describe('Formato AAAA-MM-DD.'),
+  },
+  async ({ userId, nombre, usuario, telefono, fechaNacimiento }) => {
+    const { rows } = await pool.query(
+      `update usuarios set
+         nombre = coalesce($2, nombre),
+         usuario = coalesce($3, usuario),
+         telefono = coalesce($4, telefono),
+         fecha_nacimiento = coalesce($5::date, fecha_nacimiento)
+       where id = $1
+       returning ${CAMPOS_USUARIO}`,
+      [userId, nombre ?? null, usuario ?? null, telefono ?? null, fechaNacimiento ?? null],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Usuario no encontrado.' }) }],
+      };
+    }
+
+    return { content: [{ type: 'text', text: JSON.stringify(rows[0]) }] };
   },
 );
 

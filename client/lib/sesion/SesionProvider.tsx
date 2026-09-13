@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
-import { fijarToken, login, logout, registrar } from '../api/rest';
-import { PERFIL_DEMO, type Perfil } from './perfilDemo';
+import { actualizarPerfil as actualizarPerfilApi, fijarToken, login, logout, registrar, type UsuarioApi } from '../api/rest';
+import type { Perfil } from './perfilDemo';
 
 export interface Sesion {
   /** Correo con el que se entró. */
@@ -22,8 +22,12 @@ interface ContextoSesion {
    */
   registrarse: (correo: string, contrasena: string, nombre?: string) => Promise<{ requiereConfirmacion: boolean }>;
   cerrarSesion: () => Promise<void>;
-  /** Aplica solo los campos que vengan; el resto se queda como estaba. */
-  actualizarPerfil: (cambios: Partial<Perfil>) => void;
+  /**
+   * Aplica solo los campos que vengan; el resto se queda como estaba.
+   * Persiste en Postgres (`PUT /api/auth/me`) -- lanza `ErrorApi` si falla,
+   * y en ese caso el estado local NO cambia (para no mentir que se guardó).
+   */
+  actualizarPerfil: (cambios: { nombre?: string; usuario?: string; telefono?: string; nacimiento?: string }) => Promise<void>;
 }
 
 const SesionContext = createContext<ContextoSesion | null>(null);
@@ -37,31 +41,35 @@ const SesionContext = createContext<ContextoSesion | null>(null);
  * (`lib/api/rest.ts`) viajen autenticadas. `cerrarSesion` revoca ese token
  * en Supabase antes de limpiar el estado local.
  *
- * Dos decisiones que se mantienen igual que antes de conectar auth real:
- *
- * 1. **La sesión vive solo en memoria** — al recargar la app se vuelve al
- *    login. Persistirla implicaría `expo-secure-store`; mientras nadie lo
- *    pida, "recordar sesión" no vale el dependency nuevo.
- * 2. **El perfil editado tampoco se persiste** — Supabase Auth solo sabe
- *    de `id`/`email`/`nombre` (lo que guarda `usuarios` en Postgres, vía
- *    `crear_usuario`/`get_usuario`). Los demás campos (teléfono, fecha de
- *    nacimiento, etc.) siguen siendo de `PERFIL_DEMO` -- no son datos
- *    financieros (constitution.md 4.2/6 solo prohíbe inventar esos), y
- *    todavía no hay dónde guardarlos de verdad.
+ * **La sesión vive solo en memoria** — al recargar la app se vuelve al
+ * login. Persistirla implicaría `expo-secure-store`; mientras nadie lo
+ * pida, "recordar sesión" no vale el dependency nuevo. El perfil (nombre,
+ * usuario, teléfono, fecha de nacimiento) sí vive en Postgres desde que
+ * inicia sesión -- `login`/`registrar` ya regresan el perfil completo, y
+ * `actualizarPerfil` persiste los cambios ahí mismo.
  */
+function aPerfil(usuario: UsuarioApi): Perfil {
+  return {
+    nombre: usuario.nombre ?? '',
+    usuario: usuario.usuario,
+    correo: usuario.email ?? '',
+    nacimiento: usuario.fechaNacimiento,
+    telefono: usuario.telefono,
+    clienteDesde: usuario.creadoEn ?? new Date().toISOString(),
+  };
+}
+
 export function SesionProvider({ children }: { children: ReactNode }) {
   const [sesion, setSesion] = useState<Sesion | null>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [tokens, setTokens] = useState<{ access: string; refresh: string } | null>(null);
   const [cargando, setCargando] = useState(false);
 
-  function abrirSesion(correo: string, nombre: string | null, accessToken: string, refreshToken: string) {
+  function abrirSesion(usuario: UsuarioApi, accessToken: string, refreshToken: string) {
     fijarToken(accessToken);
     setTokens({ access: accessToken, refresh: refreshToken });
-    setSesion({ correo });
-    // El correo (y el nombre, si Supabase ya lo tenía) real ganan sobre el
-    // de ejemplo: son los únicos datos del titular que sí vienen de verdad.
-    setPerfil({ ...PERFIL_DEMO, correo, ...(nombre ? { nombre } : null) });
+    setSesion({ correo: usuario.email ?? '' });
+    setPerfil(aPerfil(usuario));
   }
 
   const valor = useMemo<ContextoSesion>(
@@ -73,7 +81,7 @@ export function SesionProvider({ children }: { children: ReactNode }) {
         setCargando(true);
         try {
           const { usuario, session } = await login(correo, contrasena);
-          abrirSesion(usuario.email ?? correo, usuario.nombre, session.accessToken, session.refreshToken);
+          abrirSesion(usuario, session.accessToken, session.refreshToken);
         } finally {
           setCargando(false);
         }
@@ -83,7 +91,7 @@ export function SesionProvider({ children }: { children: ReactNode }) {
         try {
           const { usuario, session, requiereConfirmacion } = await registrar(correo, contrasena, nombre);
           if (session) {
-            abrirSesion(usuario.email ?? correo, usuario.nombre, session.accessToken, session.refreshToken);
+            abrirSesion(usuario, session.accessToken, session.refreshToken);
           }
           return { requiereConfirmacion };
         } finally {
@@ -107,8 +115,15 @@ export function SesionProvider({ children }: { children: ReactNode }) {
           setCargando(false);
         }
       },
-      actualizarPerfil: (cambios: Partial<Perfil>) =>
-        setPerfil((previo) => (previo ? { ...previo, ...cambios } : previo)),
+      actualizarPerfil: async (cambios) => {
+        const usuario = await actualizarPerfilApi({
+          nombre: cambios.nombre,
+          usuario: cambios.usuario,
+          telefono: cambios.telefono,
+          fechaNacimiento: cambios.nacimiento,
+        });
+        setPerfil(aPerfil(usuario));
+      },
     }),
     [sesion, perfil, cargando, tokens],
   );
