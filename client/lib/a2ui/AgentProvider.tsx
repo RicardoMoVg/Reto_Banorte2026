@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { useTableroOpcional } from './TableroProvider';
 import { useAgentStream } from './useAgentStream';
 
 /**
@@ -27,7 +28,17 @@ const AgentContext = createContext<ContextoAgente | null>(null);
  * estado.
  */
 export function AgentProvider({ children }: { children: ReactNode }) {
-  const stream = useAgentStream(API_URL);
+  /**
+   * El tablero se lee desde aquí para mandárselo al agente en cada
+   * request. Por eso <TableroProvider> va POR ENCIMA de este provider en
+   * app/_layout.tsx: sin el tablero en el body, `acomodarTablero` no
+   * tendría contra qué validar los ids y el agente no podría mover nada.
+   *
+   * Opcional a propósito: si algún día este provider se monta suelto (una
+   * pantalla de pruebas), el chat sigue funcionando sin tablero.
+   */
+  const tablero = useTableroOpcional();
+  const stream = useAgentStream(API_URL, tablero?.resumen);
 
   /**
    * Sin este memo, `{ ...stream }` es un objeto nuevo en cada render y TODOS

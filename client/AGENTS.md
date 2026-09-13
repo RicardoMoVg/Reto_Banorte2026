@@ -83,7 +83,31 @@ Una ventana que sí sea un destino permanente va dentro de `(tabs)/`.
   pantalla ignore lo que el usuario editó.
 - `lib/a2ui/` — el mini-SDK: `useAgentStream` (fetch + parseo NDJSON),
   `AgentProvider` (monta un único stream en la raíz para que la conversación
-  sobreviva al cambio de pestaña), `catalog.ts` y `SurfaceRenderer`.
+  sobreviva al cambio de pestaña), `TableroProvider` (qué fijó el usuario en
+  Inicio y en qué acomodo), `catalog.ts` y `SurfaceRenderer`.
+
+### El orden de los providers en `app/_layout.tsx` no es libre
+
+`ChatPanelProvider` → `TableroProvider` → `AgentProvider` →
+`AccionesProvider`, cada uno depende del de arriba:
+
+- `TableroProvider` va **arriba** de `AgentProvider` porque el tablero se
+  manda al agente en cada request (así puede acomodarlo con
+  `acomodarTablero`).
+- `ChatPanelProvider` vive en la raíz y **ya no en `(tabs)/_layout.tsx`**:
+  `AccionesProvider` lo necesita para abrir el chat cuando se toca un botón
+  de acceso rápido desde el tablero. Montarlo otra vez dentro de `(tabs)/`
+  partiría el estado en dos.
+
+### El tablero de Inicio
+
+Cada bloque anclado lleva, además de la receta, su **layout**: `ancho`
+(`'completo'` | `'medio'`) y `lado` (`'izquierda'` | `'derecha'`, solo
+aplica si es de medio ancho). Vive junto al bloque y **nunca dentro de sus
+`props`**: es chrome del tablero, no del bloque — ningún componente A2UI
+sabe de qué tamaño lo están pintando, igual que ninguno sabe que encima
+tiene un botón de quitar. `enFilas()` en `app/(tabs)/index.tsx` reparte los
+bloques en filas a partir de esos dos campos.
 - `scripts/emulator.js` + `scripts/lib/tools.js` — levantan un emulador
   Android (`npm run emulator -- <nombre-avd>`) sin necesidad de abrir
   Android Studio. Detectan el SDK vía `ANDROID_HOME`/`local.properties`/
@@ -173,6 +197,24 @@ Inicio excluye los de acción con `esBloqueDeAccion()`: una propuesta es un
 momento de una conversación, no un dato que tenga sentido fijar en el
 tablero. **Si agregas un bloque de acción, súmalo a `BLOQUES_DE_ACCION`** o
 se va a colar al tablero.
+
+Hay dos bloques en `components/` que no caen limpio en ninguna de las dos
+columnas, y por eso están documentados aquí:
+
+- `AccesoRapido.tsx` — un botón de atajo que el usuario fija en su Inicio
+  (lo crea la tool `crearAccesoRapido`). Es informativo (vive en el
+  tablero) pero necesita un callback, así que lo toma del contexto como
+  los de acción: `lanzar()` de `AccionesProvider`. Al tocarse **no ejecuta
+  nada**: manda su `peticion` a la conversación y el usuario confirma en la
+  tarjeta de siempre. Un atajo ahorra el tecleo, no el "sí".
+- `AjusteTablero.tsx` — el acuse de un reacomodo, y quien lo aplica: al
+  montarse llama `aplicarAjuste()` del `TableroProvider`. Es el único
+  bloque con efecto sobre el estado de la app; se hizo así porque el
+  protocolo solo tiene cuatro tipos de evento y no se amplían sin tocar
+  `constitution.md` 4.1. Es **idempotente por `idAjuste`**: el bloque se
+  queda en el historial del chat y su efecto se remonta cada vez que el
+  panel se abre — sin esa guarda, abrir el chat tres veces subía el mismo
+  widget tres posiciones.
 
 ⚠️ Aceptar **no guarda nada**: `mcp-server/` solo tiene tools de lectura.
 Los componentes lo dicen en pantalla y el system prompt se lo prohíbe al

@@ -1,7 +1,7 @@
 import { streamText, type LanguageModel } from 'ai';
 import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
-import { buildA2uiTools } from '@/lib/ai/a2ui-tools';
+import { buildA2uiTools, type WidgetTablero } from '@/lib/ai/a2ui-tools';
 import { SYSTEM_PROMPT } from '@/lib/ai/system-prompt';
 import { esEjecutable, ejecutar, type Ejecucion } from '@/lib/ai/ejecutables';
 
@@ -91,10 +91,70 @@ function aMensajesDelModelo(historial: unknown) {
     }));
 }
 
+/** Cuantos widgets del tablero se aceptan por request. */
+const MAX_WIDGETS = 20;
+
+/**
+ * Normaliza el tablero que reporta el cliente.
+ *
+ * Llega en cada request por la misma razon que el historial: el servidor
+ * es stateless (constitution.md 3.1) y el tablero vive en el cliente. Se
+ * acota igual que el historial -- una lista sin tope es una factura de
+ * tokens abierta.
+ *
+ * Nota de seguridad barata: aqui NUNCA entra un dato financiero. Solo id,
+ * nombre del bloque, titulo y posicion; los montos de cada widget se
+ * quedan en el dispositivo.
+ */
+function aWidgetsDelTablero(tablero: unknown): WidgetTablero[] {
+  if (!Array.isArray(tablero)) return [];
+
+  return tablero
+    .filter((w): w is Record<string, unknown> => !!w && typeof w === 'object')
+    .slice(0, MAX_WIDGETS)
+    .map((w, i) => ({
+      id: String(w.id ?? '').slice(0, 80),
+      nombre: String(w.nombre ?? '').slice(0, 80),
+      titulo: String(w.titulo ?? w.nombre ?? 'Sin titulo').slice(0, 120),
+      posicion: typeof w.posicion === 'number' ? w.posicion : i + 1,
+      ancho: w.ancho === 'medio' ? ('medio' as const) : ('completo' as const),
+      lado: w.lado === 'derecha' ? ('derecha' as const) : ('izquierda' as const),
+    }))
+    .filter((w) => w.id !== '');
+}
+
+/**
+ * El tablero, escrito para que el modelo lo pueda leer y referenciar.
+ *
+ * Va como turno de sistema del propio request y no dentro del
+ * SYSTEM_PROMPT porque cambia en cada peticion: el prompt es estatico y
+ * cacheable, esto no.
+ */
+function contextoDelTablero(widgets: WidgetTablero[]) {
+  if (widgets.length === 0) {
+    return 'Tablero actual del usuario: vacio (no ha fijado ningun bloque en su Inicio todavia).';
+  }
+
+  const lineas = widgets.map(
+    (w) =>
+      `${w.posicion}. "${w.titulo}" (${w.nombre}) -- ancho ${w.ancho}` +
+      (w.ancho === 'medio' ? ` a la ${w.lado}` : '') +
+      ` -- id="${w.id}"`,
+  );
+
+  return (
+    'Tablero actual del usuario, de arriba hacia abajo. Para acomodarlo usa `acomodarTablero`; ' +
+    'referencia cada widget por su NUMERO de esta lista (tambien acepta el titulo o el id, ' +
+    'pero el numero es el que no se presta a equivocaciones):\n' +
+    lineas.join('\n')
+  );
+}
+
 async function* generarEventos(
   message: string,
   historial: unknown,
   esDecision: boolean,
+  tablero: WidgetTablero[],
 ): AsyncGenerator<EventoA2ui> {
   /**
    * En el turno en que el usuario responde una tarjeta de acción, el
@@ -106,7 +166,7 @@ async function* generarEventos(
    * la tool le gana al system prompt. Pedirle por prompt que no lo haga es
    * apostar a que obedezca; quitarle la herramienta lo vuelve imposible.
    */
-  const tools = esDecision ? undefined : buildA2uiTools(USER_ID);
+  const tools = esDecision ? undefined : buildA2uiTools(USER_ID, tablero);
   const turnosPrevios = aMensajesDelModelo(historial);
 
   for (let i = 0; i < PROVEEDORES.length; i++) {
@@ -116,7 +176,7 @@ async function* generarEventos(
     const result = streamText({
       model,
       maxRetries: 0,
-      system: SYSTEM_PROMPT,
+      system: `${SYSTEM_PROMPT}\n\n${contextoDelTablero(tablero)}`,
       messages: [...turnosPrevios, { role: 'user', content: message }],
       tools,
       /**
@@ -210,11 +270,13 @@ async function* generarEjecucion(ejecucion: Ejecucion): AsyncGenerator<EventoA2u
 }
 
 export async function POST(req: Request) {
-  const { message, historial, esDecision, ejecucion } = (await req.json()) as {
+  const { message, historial, esDecision, ejecucion, tablero } = (await req.json()) as {
     message: string;
     historial?: unknown;
     esDecision?: boolean;
     ejecucion?: Ejecucion;
+    /** Widgets fijados en Inicio, para que el agente los pueda acomodar. */
+    tablero?: unknown;
   };
 
   const encoder = new TextEncoder();
@@ -234,7 +296,12 @@ export async function POST(req: Request) {
             enviar(evento);
           }
         } else {
-          for await (const evento of generarEventos(message, historial, esDecision === true)) {
+          for await (const evento of generarEventos(
+            message,
+            historial,
+            esDecision === true,
+            aWidgetsDelTablero(tablero),
+          )) {
             enviar(evento);
           }
         }

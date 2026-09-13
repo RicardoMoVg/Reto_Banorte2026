@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { useChatPanel } from '../ui/ChatPanelProvider';
 import { useAgent } from './AgentProvider';
 
 export type EstadoAccion = 'pendiente' | 'aceptada' | 'rechazada';
@@ -17,6 +18,12 @@ interface ContextoAcciones {
      */
     ejecucion?: unknown,
   ) => void;
+  /**
+   * Manda una petición al agente y abre el chat para que se vea la
+   * respuesta. Es lo que hace un botón de acceso rápido
+   * (`components/AccesoRapido.tsx`) al tocarse.
+   */
+  lanzar: (peticion: string) => void;
 }
 
 const AccionesContext = createContext<ContextoAcciones | null>(null);
@@ -52,6 +59,7 @@ const AccionesContext = createContext<ContextoAcciones | null>(null);
  */
 export function AccionesProvider({ children }: { children: ReactNode }) {
   const { enviar } = useAgent();
+  const { abrir } = useChatPanel();
   const [estados, setEstados] = useState<Record<string, EstadoAccion>>({});
 
   const responder = useCallback<ContextoAcciones['responder']>(
@@ -73,12 +81,31 @@ export function AccionesProvider({ children }: { children: ReactNode }) {
     [enviar],
   );
 
+  /**
+   * Un acceso rápido NO ejecuta la operación al tocarse: manda la petición
+   * como si el usuario la hubiera escrito y abre la conversación, donde el
+   * agente propone y el usuario confirma en la tarjeta de siempre.
+   *
+   * Podría dispararse la receta `{tool, args}` directo (es lo que hace
+   * `responder` al aceptar) y sería un toque menos, pero entonces un botón
+   * en el tablero movería dinero sin confirmación, a un toque de
+   * distancia de un bolsillo. Un atajo ahorra el tecleo, no el "sí".
+   */
+  const lanzar = useCallback(
+    (peticion: string) => {
+      enviar(peticion);
+      abrir();
+    },
+    [enviar, abrir],
+  );
+
   const valor = useMemo<ContextoAcciones>(
     () => ({
       estadoDe: (idAccion: string) => estados[idAccion] ?? 'pendiente',
       responder,
+      lanzar,
     }),
-    [estados, responder],
+    [estados, responder, lanzar],
   );
 
   return <AccionesContext.Provider value={valor}>{children}</AccionesContext.Provider>;

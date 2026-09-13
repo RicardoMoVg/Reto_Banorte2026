@@ -8,7 +8,7 @@ import { PantallaMarca } from '../../components/ui/PantallaMarca';
 import { Tarjeta } from '../../components/ui/Tarjeta';
 import { SurfaceRenderer } from '../../lib/a2ui/SurfaceRenderer';
 import { useAgent } from '../../lib/a2ui/AgentProvider';
-import { useTablero } from '../../lib/a2ui/TableroProvider';
+import { useTablero, type BloqueAnclado } from '../../lib/a2ui/TableroProvider';
 import { primerNombre, saludo } from '../../lib/sesion/perfilDemo';
 import { useSesion } from '../../lib/sesion/SesionProvider';
 import { useChatPanel } from '../../lib/ui/ChatPanelProvider';
@@ -26,6 +26,47 @@ const SUGERENCIAS = [
   '¿En qué gasté últimamente?',
   '¿En qué se me va el dinero?',
 ];
+
+/**
+ * Una fila del tablero: o un widget a todo lo ancho, o hasta dos de medio
+ * ancho, cada uno en su lado.
+ */
+type Fila =
+  | { tipo: 'completa'; bloque: BloqueAnclado }
+  | { tipo: 'mitades'; izquierda?: BloqueAnclado; derecha?: BloqueAnclado };
+
+/**
+ * Reparte los bloques en filas respetando el ancho y el lado que pidió el
+ * usuario (vía el agente — ver `acomodarTablero`).
+ *
+ * Las reglas, en orden: un bloque de ancho completo se queda solo en su
+ * fila; uno de medio ancho entra en la fila anterior SI esa fila es de
+ * mitades y su lado está libre; si no, abre una fila nueva. Por eso un
+ * único widget "a la derecha" se ve pegado a la derecha con el hueco a su
+ * izquierda: el lado se respeta aunque no haya con quién compartir fila,
+ * que es justo lo que el usuario pidió al decir "ponlo a la derecha".
+ */
+function enFilas(bloques: BloqueAnclado[]): Fila[] {
+  const filas: Fila[] = [];
+
+  for (const bloque of bloques) {
+    if ((bloque.ancho ?? 'completo') === 'completo') {
+      filas.push({ tipo: 'completa', bloque });
+      continue;
+    }
+
+    const lado = bloque.lado ?? 'izquierda';
+    const ultima = filas[filas.length - 1];
+
+    if (ultima?.tipo === 'mitades' && !ultima[lado]) {
+      ultima[lado] = bloque;
+    } else {
+      filas.push({ tipo: 'mitades', [lado]: bloque });
+    }
+  }
+
+  return filas;
+}
 
 /**
  * Ventana de Inicio: el tablero.
@@ -112,24 +153,27 @@ export default function Inicio() {
           </View>
         </View>
 
-        {/* Bloques dinámicos anclados */}
+        {/* Bloques dinámicos anclados, en el acomodo que pidió el usuario */}
         {bloques.length > 0 && (
           <View style={styles.bloques}>
-            {bloques.map((b) => (
-              <View key={b.id}>
-                <SurfaceRenderer
-                  mensaje={{ id: b.id, tipo: 'surface', rol: 'asistente', nombre: b.nombre, props: b.props }}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Quitar ${b.nombre} del inicio`}
-                  onPress={() => desanclar(b.id)}
-                  style={({ pressed }) => [styles.quitar, pressed && styles.presionado]}
-                >
-                  <Ionicons name="close" size={16} color={colores.textoApoyo} />
-                </Pressable>
-              </View>
-            ))}
+            {enFilas(bloques).map((fila, i) =>
+              fila.tipo === 'completa' ? (
+                <BloqueDelTablero key={fila.bloque.id} bloque={fila.bloque} alQuitar={desanclar} />
+              ) : (
+                <View key={`fila-${i}`} style={styles.filaMitades}>
+                  <View style={styles.mitad}>
+                    {fila.izquierda ? (
+                      <BloqueDelTablero bloque={fila.izquierda} alQuitar={desanclar} />
+                    ) : null}
+                  </View>
+                  <View style={styles.mitad}>
+                    {fila.derecha ? (
+                      <BloqueDelTablero bloque={fila.derecha} alQuitar={desanclar} />
+                    ) : null}
+                  </View>
+                </View>
+              ),
+            )}
           </View>
         )}
 
@@ -157,6 +201,44 @@ export default function Inicio() {
         </>
       ) : null}
     </PantallaMarca>
+  );
+}
+
+/**
+ * Un widget dentro del tablero: el bloque A2UI más el chrome del tablero
+ * (hoy, el botón de quitar).
+ *
+ * Vive aquí y no dentro del bloque porque ningún bloque A2UI tiene que
+ * saber que existe un tablero — el mismo componente se pinta igual en la
+ * conversación, donde no se puede quitar nada.
+ */
+function BloqueDelTablero({
+  bloque,
+  alQuitar,
+}: {
+  bloque: BloqueAnclado;
+  alQuitar: (id: string) => void;
+}) {
+  return (
+    <View>
+      <SurfaceRenderer
+        mensaje={{
+          id: bloque.id,
+          tipo: 'surface',
+          rol: 'asistente',
+          nombre: bloque.nombre,
+          props: bloque.props,
+        }}
+      />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Quitar ${bloque.nombre} del inicio`}
+        onPress={() => alQuitar(bloque.id)}
+        style={({ pressed }) => [styles.quitar, pressed && styles.presionado]}
+      >
+        <Ionicons name="close" size={16} color={colores.textoApoyo} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -202,6 +284,13 @@ const styles = StyleSheet.create({
 
   scroll: { paddingHorizontal: espacio.lg, gap: espacio.xl },
   bloques: { gap: espacio.md },
+  /**
+   * Fila de dos mitades. El hueco de un lado vacío se conserva (la <View>
+   * de la mitad se pinta aunque no tenga bloque) para que un widget
+   * "a la derecha" se vea a la derecha y no centrado.
+   */
+  filaMitades: { flexDirection: 'row', alignItems: 'flex-start', gap: espacio.md },
+  mitad: { flex: 1, minWidth: 0 },
   /**
    * Quitar del tablero: chrome del tablero, no del bloque. Ningún bloque
    * A2UI tiene que saber que existe un tablero.

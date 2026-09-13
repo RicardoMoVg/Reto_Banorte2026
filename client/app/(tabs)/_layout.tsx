@@ -3,7 +3,6 @@ import { Tabs } from 'expo-router';
 import { View } from 'react-native';
 import { BotonMosaico } from '../../components/ui/BotonMosaico';
 import { ChatFlotante } from '../../components/ui/ChatFlotante';
-import { ChatPanelProvider } from '../../lib/ui/ChatPanelProvider';
 import { colores, espacio, vidrio } from '../../lib/ui/theme';
 
 /**
@@ -25,11 +24,13 @@ import { colores, espacio, vidrio } from '../../lib/ui/theme';
  * parpadeo.
  */
 export default function LayoutTabs() {
+  // El <ChatPanelProvider> vive en app/_layout.tsx, no aquí: el estado del
+  // panel lo necesitan también providers de la raíz (ver el comentario de
+  // orden en ese archivo).
   return (
-    <ChatPanelProvider>
-      <View style={{ flex: 1 }}>
-        <Tabs
-          screenOptions={{
+    <View style={{ flex: 1 }}>
+      <Tabs
+        screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: colores.acento,
           tabBarInactiveTintColor: vidrio.textoTenue,
@@ -71,14 +72,13 @@ export default function LayoutTabs() {
             ),
           }}
         />
-        </Tabs>
+      </Tabs>
 
-        {/* Panel flotante del chat — se anima sobre las pestañas */}
-        <ChatFlotante />
+      {/* Panel flotante del chat — se anima sobre las pestañas */}
+      <ChatFlotante />
 
-        {/* FAB — se oculta sola cuando el panel está abierto */}
-        <BotonMosaico />
-      </View>
-    </ChatPanelProvider>
+      {/* FAB — se oculta sola cuando el panel está abierto */}
+      <BotonMosaico />
+    </View>
   );
 }

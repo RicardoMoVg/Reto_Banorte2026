@@ -42,9 +42,20 @@ function uid() {
  * es reusable y no sabe nada de qué componentes existen (eso es
  * catalog.ts/SurfaceRenderer.tsx).
  */
-export function useAgentStream(apiUrl: string) {
+export function useAgentStream(apiUrl: string, describirTablero?: () => unknown[]) {
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [cargando, setCargando] = useState(false);
+
+  /**
+   * Cómo preguntarle al tablero qué tiene fijado ahora mismo.
+   *
+   * Va en un ref por la misma razón que `mensajesRef`: `enviar` se queda
+   * con la clausura del render en el que se creó, y sin el ref mandaría el
+   * tablero de hace dos mensajes. El agente lo necesita fresco para poder
+   * acomodarlo (`acomodarTablero` valida los ids contra esta lista).
+   */
+  const tableroRef = useRef(describirTablero);
+  tableroRef.current = describirTablero;
 
   /**
    * Espejo de `mensajes` para leerlo dentro de `enviar` sin depender de la
@@ -86,6 +97,9 @@ export function useAgentStream(apiUrl: string) {
           historial: aHistorial(mensajesRef.current),
           esDecision,
           ejecucion,
+          // Solo id/nombre/título/posición de cada widget — nunca sus
+          // props, que es donde viven los montos (constitution.md 4.2).
+          tablero: tableroRef.current?.() ?? [],
         }),
       });
 

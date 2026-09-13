@@ -14,6 +14,8 @@ import { GraficoBarras_V } from '../../components/GraphBar_V';
 import { GraphCircle } from '../../components/GraphCircle';
 import { GraphSemiCircle } from '../../components/GraphSemiCircle';
 import { WidgetCompromiso } from '../../components/WidgetCompromiso';
+import { AccesoRapido } from '../../components/AccesoRapido';
+import { AjusteTablero } from '../../components/AjusteTablero';
 import { TarjetaAccion } from '../../components/chat/TarjetaAccion';
 
 /**
@@ -49,6 +51,14 @@ export const catalogoA2ui: Record<string, ComponentType<any>> = {
   GraficaBarras: GraficoBarras_V,
   GraficaBarrasH: GraficoBarras_H,
   GraficaLineas: GraphSpline,
+
+  // Atajo de un toque que el usuario fija en su Inicio. Lo crea
+  // `crearAccesoRapido`; al tocarse manda su peticion a la conversacion
+  // (no ejecuta nada por su cuenta) -- ver components/AccesoRapido.tsx.
+  AccesoRapido,
+  // Acuse de un reacomodo del tablero, y quien lo aplica: lo manda
+  // `acomodarTablero` y el componente escribe en <TableroProvider>.
+  AjusteTablero,
 
   // De acción (components/chat/): el usuario acepta o rechaza, y su
   // respuesta vuelve al agente. Contrato en components/chat/tipos.ts.

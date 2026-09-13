@@ -72,6 +72,16 @@ export const schemaTransacciones = z.object({
     .describe(
       'Filtra solo movimientos de esta categoría, ej. "comida", "suscripciones". Si no se especifica, se muestran todas.',
     ),
+  busqueda: z
+    .string()
+    .optional()
+    .describe(
+      'Texto para quedarse SOLO con los movimientos que lo mencionen (en su descripción o su ' +
+        'categoría). Úsalo cuando el usuario pida UNO en concreto y no la lista entera: ' +
+        '"muéstrame solo el cargo de Spotify", "enséñame el pago de la luz". Va el texto tal como ' +
+        'lo dijo el usuario — el filtrado lo hace el código, tú nunca escribes el monto. ' +
+        'Si además quieres UN solo renglón, manda `limite: 1`.',
+    ),
   mensajeAgente: z.string().describe('Observación breve, una línea.'),
 });
 
@@ -546,9 +556,142 @@ export const schemaListado = z.object({
         'metas. "habitos": habitos financieros y su racha.',
     ),
   titulo: z.string().describe('Encabezado de la lista, ej. "Tus contactos guardados".'),
+  filtro: z
+    .string()
+    .optional()
+    .describe(
+      'Texto para quedarse SOLO con los renglones que lo mencionen (nombre, concepto, alias, ' +
+        'estatus). Es como se responde "muestrame SOLO la transferencia a Juan" o "la de la renta": ' +
+        'mandas fuente "transferencias" y filtro "Juan". Va el texto que dijo el usuario; el ' +
+        'filtrado lo hace el codigo contra el dato real del MCP.',
+    ),
+  limite: z
+    .number()
+    .int()
+    .positive()
+    .max(20)
+    .optional()
+    .describe(
+      'Cuantos renglones mostrar, ya filtrados. Manda 1 cuando el usuario pida UN solo dato ' +
+        '("solo la ultima transferencia", "nada mas mi tarjeta principal").',
+    ),
   agregarAInicio: z
     .boolean()
     .optional()
     .describe('true SOLO si el usuario pidio que quede fijo en su pantalla de inicio.'),
   mensajeAgente: z.string().describe('Observacion breve sobre la lista, una linea.'),
+});
+
+/* ------------------------------------------------------------------ *
+ * Layout del tablero y accesos rapidos
+ *
+ * Estas dos NO traen dato financiero: una acomoda widgets que el usuario
+ * ya habia fijado, la otra crea un boton. Aun asi siguen la misma regla de
+ * `constitution.md` 4.4 -- el modelo elige POR REFERENCIA (el id del
+ * widget, el nombre del contacto), nunca por valor.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Reacomodo del tablero de Inicio.
+ *
+ * El servidor no guarda el tablero (vive en el cliente, ver
+ * `client/lib/a2ui/TableroProvider.tsx`): la lista de widgets llega en cada
+ * request y esta tool solo valida contra ella. Por eso el modelo referencia
+ * widgets por el `id` que le dieron, no por uno que invente.
+ */
+export const schemaAcomodarTablero = z.object({
+  ajustes: z
+    .array(
+      z.object({
+        id: z
+          .string()
+          .describe(
+            'Cual widget mover. Se vale cualquiera de las tres formas que trae la lista ' +
+              '"Tablero actual" del contexto: su numero de posicion ("2"), su id, o su titulo ' +
+              '("Saldo disponible"). El numero es el mas seguro -- copiar un id largo se presta ' +
+              'a equivocarse de widget. Lo que NO se vale es inventar una referencia que no este ' +
+              'en esa lista.',
+          ),
+        mover: z
+          .enum(['arriba', 'abajo', 'inicio', 'final'])
+          .optional()
+          .describe(
+            'Como cambiar su lugar en la columna. "arriba"/"abajo": una posicion. ' +
+              '"inicio": hasta arriba del tablero. "final": hasta abajo.',
+          ),
+        ancho: z
+          .enum(['completo', 'medio'])
+          .optional()
+          .describe(
+            'Que tanto ocupa a lo ancho. "completo": toda la fila (es el tamano por defecto). ' +
+              '"medio": la mitad, para que quepan dos widgets lado a lado. Usa "medio" cuando el ' +
+              'usuario lo pida mas chico o lo quiera a un lado.',
+          ),
+        lado: z
+          .enum(['izquierda', 'derecha'])
+          .optional()
+          .describe(
+            'De que lado queda cuando es "medio". Solo aplica con ancho "medio": un widget ' +
+              'completo ocupa la fila entera y no tiene lado. Si el usuario dice "hazlo mas ' +
+              'chico a la derecha", manda ancho "medio" Y lado "derecha".',
+          ),
+      }),
+    )
+    .min(1)
+    .max(5)
+    .describe('Un ajuste por widget que se mueve. Solo los que cambian, no todo el tablero.'),
+  mensajeAgente: z.string().describe('Confirmacion breve de lo que acomodaste, una linea.'),
+});
+
+/**
+ * Boton de acceso rapido: un atajo de un toque que el usuario fija en su
+ * Inicio ("ponme un boton para transferirle a mi mama").
+ *
+ * El boton NO mueve dinero al tocarse: dispara la peticion en la
+ * conversacion y el usuario confirma en la tarjeta de siempre. Ver
+ * `client/components/AccesoRapido.tsx`.
+ */
+export const schemaAccesoRapido = z.object({
+  accion: z
+    .enum(['transferencia', 'consulta'])
+    .describe(
+      '"transferencia": el boton prepara un envio a un contacto guardado (manda ' +
+        '`nombreContacto`, y `monto` si el usuario dijo cuanto). ' +
+        '"consulta": el boton le vuelve a preguntar algo al asistente (manda `pregunta`).',
+    ),
+  nombreContacto: z
+    .string()
+    .optional()
+    .describe(
+      'Solo para "transferencia": nombre (o parte) del contacto guardado. Se valida contra los ' +
+        'contactos reales -- si no existe, guardalo antes con `crearContactoPago`.',
+    ),
+  monto: z
+    .number()
+    .positive()
+    .optional()
+    .describe(
+      'Solo para "transferencia": cuanto va a enviar el boton, si el usuario ya lo dijo ' +
+        '("un boton para mandarle 500 a Ana"). Dejalo vacio si no dijo cantidad: el boton ' +
+        'entonces pregunta el monto al tocarse.',
+    ),
+  concepto: z.string().optional().describe('Solo para "transferencia": el concepto, si lo dijo.'),
+  pregunta: z
+    .string()
+    .optional()
+    .describe(
+      'Solo para "consulta": la pregunta que el boton le manda al asistente, redactada como si ' +
+        'la escribiera el usuario, ej. "¿cual es mi saldo disponible?".',
+    ),
+  titulo: z
+    .string()
+    .describe('Texto del boton, corto y en imperativo, ej. "Transferir a Ana", "Ver mi saldo".'),
+  icono: z
+    .enum(['transferir', 'persona', 'saldo', 'grafica', 'meta', 'tarjeta', 'rayo'])
+    .optional()
+    .describe(
+      'Que icono le queda. Mandas el NOMBRE de la idea, no el icono: el cliente decide con que ' +
+        'lo dibuja. Por defecto "rayo".',
+    ),
+  mensajeAgente: z.string().describe('Contexto breve sobre el atajo, una linea.'),
 });

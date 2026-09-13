@@ -50,6 +50,8 @@ import {
   schemaTarjetaAccion,
   schemaGrafica,
   schemaListado,
+  schemaAcomodarTablero,
+  schemaAccesoRapido,
   schemaPropuestaAhorro,
   schemaConfirmarAccion,
   schemaCrearMeta,
@@ -156,14 +158,109 @@ const ETIQUETA_VACIO: Record<string, string> = {
 };
 
 /**
+ * Para comparar lo que escribio el usuario contra el dato real: sin
+ * acentos, sin mayusculas. "telefono" tiene que encontrar "Teléfono".
+ */
+function normalizar(texto: string) {
+  return texto
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim();
+}
+
+/**
+ * Un widget del tablero de Inicio, tal como lo reporta el cliente en cada
+ * request (ver `client/lib/a2ui/TableroProvider.tsx` -> `resumen()`).
+ *
+ * Solo trae lo necesario para poder referenciarlo: id, que bloque es, con
+ * que titulo se ve y donde esta hoy. NUNCA sus datos -- el tablero se
+ * acomoda sin que el modelo vea un solo monto.
+ */
+/**
+ * Encuentra el widget al que se refiere el modelo: por numero de posicion,
+ * por id, o por titulo. Devuelve undefined si no es ninguno de los tres --
+ * nunca "el mas parecido", que seria mover un widget al azar.
+ */
+function resolverWidget(tablero: WidgetTablero[], referencia: string) {
+  const limpia = referencia.trim();
+
+  const porId = tablero.find((w) => w.id === limpia);
+  if (porId) return porId;
+
+  // "2", pero tambien "2." o "#2": el modelo a veces adorna el numero.
+  const numero = Number(limpia.replace(/[^0-9]/g, ''));
+  if (limpia.replace(/[^0-9]/g, '') !== '' && Number.isInteger(numero)) {
+    const porPosicion = tablero.find((w) => w.posicion === numero);
+    if (porPosicion) return porPosicion;
+  }
+
+  const aguja = normalizar(limpia);
+  if (aguja === '') return undefined;
+
+  return tablero.find(
+    (w) => normalizar(w.titulo).includes(aguja) || normalizar(w.nombre) === aguja,
+  );
+}
+
+/**
+ * Como se lee un ajuste de tablero en la tarjeta de confirmacion. Lo
+ * redacta el servidor y no el modelo para que diga exactamente lo que se
+ * aplico, no lo que el modelo creyo haber pedido.
+ */
+function descripcionDelCambio(
+  mover?: 'arriba' | 'abajo' | 'inicio' | 'final',
+  ancho?: 'completo' | 'medio',
+  lado?: 'izquierda' | 'derecha',
+) {
+  const partes: string[] = [];
+
+  if (mover === 'arriba') partes.push('subio una posicion');
+  if (mover === 'abajo') partes.push('bajo una posicion');
+  if (mover === 'inicio') partes.push('se fue hasta arriba');
+  if (mover === 'final') partes.push('se fue hasta abajo');
+
+  if (ancho === 'medio') {
+    partes.push(lado === 'derecha' ? 'a media fila, a la derecha' : 'a media fila, a la izquierda');
+  } else if (ancho === 'completo') {
+    partes.push('a fila completa');
+  } else if (lado) {
+    partes.push(lado === 'derecha' ? 'a la derecha' : 'a la izquierda');
+  }
+
+  return partes.length > 0 ? partes.join(' y ') : 'sin cambios';
+}
+
+interface RenglonListado {
+  principal: string;
+  secundario?: string;
+  valor?: string;
+  estatus?: string;
+}
+
+export interface WidgetTablero {
+  id: string;
+  nombre: string;
+  titulo: string;
+  posicion: number;
+  ancho: 'completo' | 'medio';
+  lado: 'izquierda' | 'derecha';
+}
+
+/**
  * Catálogo de tools del A2UI-lite (API JSON, /app/api/agent/route.ts).
  *
  * Cada tool usa la API plana de "ai" y su `execute` regresa JSON, nunca
  * JSX — el cliente (client/) decide cómo pintarlo con su propio catálogo
  * de componentes nativos. Llama al MCP real: el modelo nunca inventa
  * datos, solo elige qué mostrar y redacta el mensaje de contexto.
+ *
+ * `tablero` es lo que el usuario tiene fijado en Inicio AHORA MISMO. Llega
+ * en cada request porque el servidor es stateless (constitution.md 3.1) y
+ * el tablero vive en el cliente; sirve para que `acomodarTablero` valide
+ * contra widgets que existen de verdad en vez de creerle un id al modelo.
  */
-export function buildA2uiTools(userId: string) {
+export function buildA2uiTools(userId: string, tablero: WidgetTablero[] = []) {
     /**
      * Traduce cada dominio del MCP a la forma comun de `ListaDatos`
      * (principal / secundario / valor / estatus). Vive dentro de
@@ -172,7 +269,7 @@ export function buildA2uiTools(userId: string) {
      * Las cifras se formatean AQUI, no en el componente: el bloque solo
      * pinta strings (constitution.md 4.2).
      */
-    async function renglonesDe(fuente: string) {
+    async function renglonesDe(fuente: string): Promise<RenglonListado[]> {
       if (fuente === 'contactos') {
         const contactos = await getContactosPago(userId, {});
         return contactos.map((c) => ({
@@ -263,17 +360,45 @@ export function buildA2uiTools(userId: string) {
         'transferencias, tarjetas de credito, portafolio de inversion, polizas ' +
         'de seguro, solicitudes de credito, aportaciones programadas o habitos ' +
         'financieros. NUNCA respondas que no tienes acceso a estos datos: los ' +
-        'tienes, estan aqui.',
+        'tienes, estan aqui. Si el usuario pide UNO en concreto y no la lista ' +
+        'completa ("solo la transferencia a Juan"), usa `filtro` y `limite` en ' +
+        'vez de mandar la lista entera. ' +
+        'Esta tool SOLO MUESTRA lo que ya existe. Si el usuario pide que HAGAS ' +
+        'algo -- transferir, mandar dinero, abonar, pagar, guardar un contacto, ' +
+        'crear un boton -- no es esta: usa la tool de esa accion aunque la frase ' +
+        'mencione a un contacto.',
       parameters: schemaListado,
-      execute: async ({ fuente, titulo, agregarAInicio, mensajeAgente }) => {
-        const items = await renglonesDe(fuente);
+      execute: async ({ fuente, titulo, filtro, limite, agregarAInicio, mensajeAgente }) => {
+        const todos = await renglonesDe(fuente);
+
+        /**
+         * El filtro corre AQUI, sobre el dato que ya regreso el MCP, y no
+         * se lo pedimos al modelo: el modelo dice a QUE se parece lo que
+         * pidio el usuario ("Juan"), el codigo decide cual renglon es.
+         * Mandarle la lista al modelo para que el eligiera seria hacerlo
+         * retranscribir montos -- justo lo que prohibe constitution.md 4.2.
+         */
+        const aguja = filtro ? normalizar(filtro) : null;
+        const filtrados = aguja
+          ? todos.filter((item) =>
+              [item.principal, item.secundario, item.valor, item.estatus]
+                .filter((campo): campo is string => typeof campo === 'string')
+                .some((campo) => normalizar(campo).includes(aguja)),
+            )
+          : todos;
+
+        const items = limite ? filtrados.slice(0, limite) : filtrados;
 
         return {
           tipo: 'ListaDatos' as const,
           props: {
             titulo,
             items,
-            vacio: `Todavia no tienes ${ETIQUETA_VACIO[fuente]}.`,
+            // Un filtro que no caso no es "no tienes nada": el usuario si
+            // tiene transferencias, solo ninguna que se llame asi.
+            vacio: filtro
+              ? `No encontre ${ETIQUETA_VACIO[fuente]} que coincidan con "${filtro}".`
+              : `Todavia no tienes ${ETIQUETA_VACIO[fuente]}.`,
             mensajeAgente,
             agregarAInicio,
           },
@@ -333,19 +458,42 @@ export function buildA2uiTools(userId: string) {
     mostrarTransacciones: tool({
       description:
         'Muestra una lista de movimientos recientes del usuario. Úsala ' +
-        'cuando pregunte en qué gastó, sus últimos cargos o sus ingresos.',
+        'cuando pregunte en qué gastó, sus últimos cargos o sus ingresos. ' +
+        'Si pide UN movimiento en concreto ("solo el cargo de Netflix"), manda ' +
+        '`busqueda` con ese texto y `limite: 1`.',
       parameters: schemaTransacciones,
-      execute: async ({ titulo, limite, categoria, agregarAInicio, mensajeAgente }) => {
+      execute: async ({ titulo, limite, categoria, busqueda, agregarAInicio, mensajeAgente }) => {
+        /**
+         * Con `busqueda` se traen MAS movimientos de los que se van a
+         * mostrar y se filtra aqui: si se pidiera el limite crudo al MCP,
+         * buscar "Spotify" entre los ultimos 3 movimientos no lo
+         * encontraria aunque exista mas atras.
+         */
         const transacciones = await getTransaccionesRecientes(userId, {
-          limite: limite ?? 10,
+          limite: busqueda ? MAX_TRANSACCIONES : (limite ?? 10),
           categoria,
         });
+
+        const aguja = busqueda ? normalizar(busqueda) : null;
+        const coincidentes = aguja
+          ? transacciones.filter((t) =>
+              normalizar(`${t.descripcion} ${t.categoria ?? ''}`).includes(aguja),
+            )
+          : transacciones;
+
+        const visibles = busqueda ? coincidentes.slice(0, limite ?? 10) : coincidentes;
+
+        if (busqueda && visibles.length === 0) {
+          return {
+            error: `No hay ningun movimiento reciente que mencione "${busqueda}".`,
+          };
+        }
 
         return {
           tipo: 'ListaTransacciones' as const,
           props: {
             titulo,
-            transacciones: transacciones.map((t) => ({
+            transacciones: visibles.map((t) => ({
               descripcion: t.descripcion,
               monto: t.monto,
               categoria: t.categoria,
@@ -384,6 +532,177 @@ export function buildA2uiTools(userId: string) {
         return {
           tipo: 'ComparativoGastos' as const,
           props: { titulo, categorias, mensajeAgente, agregarAInicio },
+        };
+      },
+    }),
+
+    acomodarTablero: tool({
+      description:
+        'Cambia el ACOMODO de los widgets que el usuario ya tiene fijados en su Inicio: ' +
+        'subir o bajar uno, mandarlo hasta arriba o hasta abajo, hacerlo mas chico (medio ' +
+        'ancho) y ponerlo a la izquierda o a la derecha. Usala cuando diga cosas como ' +
+        '"sube mis gastos", "pon el saldo hasta arriba", "haz la grafica mas chica a la ' +
+        'derecha", "acomoda mi tablero". NO agrega ni quita widgets: solo mueve los que ya ' +
+        'estan. La lista de widgets con sus ids viene en el contexto de este turno; si esta ' +
+        'vacia, el usuario no ha fijado nada todavia.',
+      parameters: schemaAcomodarTablero,
+      execute: async ({ ajustes, mensajeAgente }) => {
+        if (tablero.length === 0) {
+          return {
+            error:
+              'El tablero de Inicio esta vacio: no hay nada que acomodar. Dile al usuario que ' +
+              'primero agregue algun bloque a su Inicio (puede pedirte "agrega esto a mi inicio").',
+          };
+        }
+
+        /**
+         * Cada referencia se resuelve contra el tablero real. Si el modelo
+         * mandó una que no existe, no se aplica NADA: aplicar la mitad de
+         * un reacomodo deja la pantalla peor que como estaba.
+         *
+         * Se acepta la posicion y el titulo ademas del id porque los ids
+         * son largos y parecidos entre si (salen del id del mensaje del
+         * chat): pidiendole al modelo que copie uno, se equivocaba de
+         * widget -- movia los gastos cuando el usuario habia dicho "saldo".
+         */
+        const resueltos = ajustes.map((a) => ({
+          ajuste: a,
+          widget: resolverWidget(tablero, a.id),
+        }));
+
+        const desconocido = resueltos.find((r) => !r.widget);
+        if (desconocido) {
+          return {
+            error:
+              `En el tablero no hay ningun widget que sea "${desconocido.ajuste.id}". ` +
+              `Los que hay son: ${tablero.map((w) => `${w.posicion}. ${w.titulo}`).join(' | ')}. ` +
+              'Vuelve a intentarlo usando el numero de posicion.',
+          };
+        }
+
+        const aplicados = resueltos.map(({ ajuste, widget }) => ({
+          // Siempre el id REAL, aunque el modelo haya referenciado por
+          // posicion o titulo: es lo unico que el cliente sabe buscar.
+          id: widget!.id,
+          titulo: widget!.titulo,
+          mover: ajuste.mover,
+          // Pedir "a la derecha" implica hacerlo chico: un widget de ancho
+          // completo ocupa la fila entera y no tiene lado posible.
+          ancho: ajuste.ancho ?? (ajuste.lado ? ('medio' as const) : undefined),
+          lado: ajuste.lado,
+        }));
+
+        return {
+          tipo: 'AjusteTablero' as const,
+          props: {
+            // Lo genera el codigo, como `idAccion`: es la llave con la que
+            // el cliente recuerda que este ajuste ya se aplico y no lo
+            // vuelve a aplicar al repintar el historial.
+            idAjuste: `tablero-${Date.now()}`,
+            ajustes: aplicados,
+            resumen: aplicados.map((a) => ({
+              titulo: a.titulo,
+              cambio: descripcionDelCambio(a.mover, a.ancho, a.lado),
+            })),
+            mensajeAgente,
+          },
+        };
+      },
+    }),
+
+    crearAccesoRapido: tool({
+      description:
+        'ESTA es la tool cuando el usuario dice las palabras "boton", "acceso rapido", ' +
+        '"atajo" o "shortcut". Crea un boton de un toque para su pantalla de Inicio. ' +
+        'Ejemplos que le tocan a ESTA tool y a ninguna otra: "ponme un boton para ' +
+        'transferirle a mi mama" (accion "transferencia", nombreContacto "mama"), "quiero ' +
+        'un acceso rapido para mandarle 300 a Pedro" (accion "transferencia", monto 300), ' +
+        '"hazme un atajo para ver mi saldo" (accion "consulta"). ' +
+        'OJO: pedir un BOTON para transferir NO es pedir una transferencia ni guardar un ' +
+        'contacto -- si la frase trae "boton"/"acceso rapido"/"atajo", NO uses ' +
+        'proponerTransferencia, ni crearContactoPago, ni mostrarListado. El contacto se ' +
+        'valida aqui adentro. El boton no mueve dinero al tocarse: prepara la peticion y el ' +
+        'usuario la confirma en la tarjeta de siempre.',
+      parameters: schemaAccesoRapido,
+      execute: async ({
+        accion,
+        nombreContacto,
+        monto,
+        concepto,
+        pregunta,
+        titulo,
+        icono,
+        mensajeAgente,
+      }) => {
+        if (accion === 'consulta') {
+          if (!pregunta) {
+            return {
+              error: 'Un acceso rapido de consulta necesita `pregunta`. Vuelve a llamarla con ella.',
+            };
+          }
+
+          return {
+            tipo: 'AccesoRapido' as const,
+            props: {
+              titulo,
+              subtitulo: 'Se lo pregunta a Mosaico por ti',
+              icono: icono ?? 'rayo',
+              peticion: pregunta,
+              mensajeAgente,
+              // Un atajo solo sirve fijado: por eso lo marca el codigo y no
+              // el modelo. El usuario igual lo confirma con el boton de
+              // "Aceptar componente" (client/components/chat/PropuestaDeAnclaje).
+              agregarAInicio: true,
+            },
+          };
+        }
+
+        if (!nombreContacto) {
+          return { error: 'Un acceso rapido de transferencia necesita `nombreContacto`.' };
+        }
+
+        const contactos = await getContactosPago(userId, { nombre: nombreContacto });
+
+        if (contactos.length === 0) {
+          return {
+            error:
+              `No hay ningun contacto guardado que coincida con "${nombreContacto}", asi que el ` +
+              'boton no tendria a quien mandarle. Si el usuario te dio una CLABE, guarda primero ' +
+              'el contacto con `crearContactoPago` y vuelve a crear el acceso rapido.',
+          };
+        }
+        if (contactos.length > 1) {
+          return {
+            error: `Hay mas de un contacto que coincide con "${nombreContacto}": ${contactos
+              .map((c) => c.nombre)
+              .join(', ')}. Pide que aclare para cual es el boton.`,
+          };
+        }
+
+        const contacto = contactos[0];
+
+        /**
+         * La frase que el boton le manda al agente al tocarse. La arma el
+         * CODIGO con el monto que ya valido el schema, no el modelo: es el
+         * mismo motivo por el que `proponerTransferencia` no deja que el
+         * modelo reescriba la cifra en un segundo turno.
+         */
+        const peticion = monto
+          ? `Transfiere ${formatoMXN.format(monto)} a ${contacto.nombre}${concepto ? ` por ${concepto}` : ''}.`
+          : `Quiero transferirle a ${contacto.nombre}.`;
+
+        return {
+          tipo: 'AccesoRapido' as const,
+          props: {
+            titulo,
+            subtitulo: monto
+              ? `${formatoMXN.format(monto)} a ${contacto.nombre}`
+              : `Para ${contacto.nombre}`,
+            icono: icono ?? 'transferir',
+            peticion,
+            mensajeAgente,
+            agregarAInicio: true,
+          },
         };
       },
     }),
