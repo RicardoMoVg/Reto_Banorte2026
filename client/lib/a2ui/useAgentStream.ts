@@ -140,6 +140,8 @@ export function useAgentStream(apiUrl: string, describirTablero?: () => unknown[
                 rol: 'asistente',
                 nombre: evento.tipo,
                 props: evento.props,
+                tool: evento.tool,
+                parametros: evento.parametros,
               },
             ]);
           } else if (evento.type === 'text' && evento.content) {

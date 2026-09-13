@@ -172,6 +172,112 @@ export async function getUsuario(userId: string): Promise<PerfilBanca | null> {
   return llamarTool<PerfilBanca | null>('get_usuario', { userId });
 }
 
+export interface WidgetAnclado {
+  id: string;
+  componente: string;
+  tool: string;
+  parametros: Record<string, unknown>;
+  mensajeAgente: string | null;
+  orden: number;
+  ancho: 'completo' | 'medio';
+  lado: 'izquierda' | 'derecha';
+}
+
+const DASHBOARD_WIDGETS_MOCK: WidgetAnclado[] = [];
+
+export async function getDashboardWidgets(userId: string): Promise<WidgetAnclado[]> {
+  if (USE_MOCK) return DASHBOARD_WIDGETS_MOCK;
+
+  const rows = await llamarTool<
+    Array<{
+      id: string;
+      componente: string;
+      tool: string;
+      parametros: Record<string, unknown>;
+      mensaje_agente: string | null;
+      orden: number;
+      ancho: 'completo' | 'medio';
+      lado: 'izquierda' | 'derecha';
+    }>
+  >('get_dashboard_widgets', { userId });
+
+  return rows.map((w) => ({
+    id: w.id,
+    componente: w.componente,
+    tool: w.tool,
+    parametros: w.parametros,
+    mensajeAgente: w.mensaje_agente,
+    orden: w.orden,
+    ancho: w.ancho,
+    lado: w.lado,
+  }));
+}
+
+export async function anclarWidget(
+  userId: string,
+  id: string,
+  componente: string,
+  tool: string,
+  parametros: Record<string, unknown>,
+  mensajeAgente?: string,
+  ancho: 'completo' | 'medio' = 'completo',
+  lado: 'izquierda' | 'derecha' = 'izquierda',
+): Promise<WidgetAnclado | { error: string }> {
+  if (USE_MOCK) {
+    if (DASHBOARD_WIDGETS_MOCK.some((w) => w.id === id)) return { error: 'Ese widget ya estaba anclado.' };
+    const widget: WidgetAnclado = {
+      id,
+      componente,
+      tool,
+      parametros,
+      mensajeAgente: mensajeAgente ?? null,
+      orden: (Math.min(0, ...DASHBOARD_WIDGETS_MOCK.map((w) => w.orden)) || 0) - 1,
+      ancho,
+      lado,
+    };
+    DASHBOARD_WIDGETS_MOCK.unshift(widget);
+    return widget;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | {
+        id: string;
+        componente: string;
+        tool: string;
+        parametros: Record<string, unknown>;
+        mensaje_agente: string | null;
+        orden: number;
+        ancho: 'completo' | 'medio';
+        lado: 'izquierda' | 'derecha';
+      }
+  >('anclar_widget', { userId, id, componente, tool, parametros, mensajeAgente, ancho, lado });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    componente: resultado.componente,
+    tool: resultado.tool,
+    parametros: resultado.parametros,
+    mensajeAgente: resultado.mensaje_agente,
+    orden: resultado.orden,
+    ancho: resultado.ancho,
+    lado: resultado.lado,
+  };
+}
+
+export async function desanclarWidget(userId: string, id: string): Promise<{ id: string } | { error: string }> {
+  if (USE_MOCK) {
+    const indice = DASHBOARD_WIDGETS_MOCK.findIndex((w) => w.id === id);
+    if (indice < 0) return { error: 'Widget no encontrado.' };
+    DASHBOARD_WIDGETS_MOCK.splice(indice, 1);
+    return { id };
+  }
+
+  return llamarTool<{ id: string } | { error: string }>('desanclar_widget', { userId, id });
+}
+
 export async function getMetasUsuario(
   userId: string,
   incluirArchivadas = false,

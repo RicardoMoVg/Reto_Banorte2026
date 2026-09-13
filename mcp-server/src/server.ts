@@ -55,6 +55,84 @@ server.tool(
 );
 
 server.tool(
+  'get_dashboard_widgets',
+  'Obtiene los widgets que el usuario ancló a su tablero de Inicio (la receta -- no el dato resuelto, ver constitution.md 3.2), en orden.',
+  {
+    userId: z.string().describe('Id del usuario'),
+  },
+  async ({ userId }) => {
+    const { rows } = await pool.query(
+      `select id, componente, tool, parametros, mensaje_agente, orden, ancho, lado
+       from dashboard_widgets
+       where usuario_id = $1
+       order by orden asc`,
+      [userId],
+    );
+
+    return { content: [{ type: 'text', text: JSON.stringify(rows) }] };
+  },
+);
+
+server.tool(
+  'anclar_widget',
+  'Ancla un widget al tablero de Inicio del usuario. Guarda la receta (componente/tool/parametros), nunca el valor ya resuelto -- se recalcula fresco cada vez que se rehidrata (constitution.md 3.2). Va hasta arriba del tablero.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    id: z.string().describe('Id del widget (lo genera el cliente, es el mismo id del mensaje del chat del que salió)'),
+    componente: z.string().describe('Nombre en el catálogo del cliente, ej. "RastreadorMetas"'),
+    tool: z.string().describe('Tool de a2ui-tools.ts a re-ejecutar, ej. "mostrarProgresoMeta"'),
+    parametros: z.record(z.unknown()).default({}),
+    mensajeAgente: z.string().optional(),
+    ancho: z.enum(['completo', 'medio']).default('completo'),
+    lado: z.enum(['izquierda', 'derecha']).default('izquierda'),
+  },
+  async ({ userId, id, componente, tool, parametros, mensajeAgente, ancho, lado }) => {
+    const { rows } = await pool.query(
+      `insert into dashboard_widgets (id, usuario_id, componente, tool, parametros, mensaje_agente, orden, ancho, lado)
+       values (
+         $1, $2, $3, $4, $5, $6,
+         coalesce((select min(orden) - 1 from dashboard_widgets where usuario_id = $2), 0),
+         $7, $8
+       )
+       on conflict (id) do nothing
+       returning id, componente, tool, parametros, mensaje_agente, orden, ancho, lado`,
+      [id, userId, componente, tool, JSON.stringify(parametros), mensajeAgente ?? null, ancho, lado],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Ese widget ya estaba anclado.' }) }],
+      };
+    }
+
+    return { content: [{ type: 'text', text: JSON.stringify(rows[0]) }] };
+  },
+);
+
+server.tool(
+  'desanclar_widget',
+  'Quita un widget del tablero de Inicio del usuario.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    id: z.string().describe('Id del widget'),
+  },
+  async ({ userId, id }) => {
+    const { rows } = await pool.query(
+      `delete from dashboard_widgets where id = $1 and usuario_id = $2 returning id`,
+      [id, userId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Widget no encontrado o no pertenece al usuario.' }) }],
+      };
+    }
+
+    return { content: [{ type: 'text', text: JSON.stringify({ id }) }] };
+  },
+);
+
+server.tool(
   'get_metas',
   'Obtiene las metas de ahorro del usuario junto con su porcentaje de avance. Por defecto no incluye las archivadas.',
   {

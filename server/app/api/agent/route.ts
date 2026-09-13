@@ -33,7 +33,11 @@ export function OPTIONS() {
 
 type EventoA2ui =
   | { type: 'text'; content: string }
-  | { type: 'surface'; tipo: string; props: unknown }
+  // `tool`/`parametros`: la receta para rehidratar el bloque sin pasar por
+  // el modelo (constitution.md 3.2/4.1) -- antes se perdían en el camino,
+  // el cliente nunca sabía qué tool ni con qué argumentos produjo el
+  // bloque, así que "anclar" no tenía nada real que guardar.
+  | { type: 'surface'; tipo: string; props: unknown; tool?: string; parametros?: unknown }
   | { type: 'done' }
   | { type: 'error'; message: string };
 
@@ -216,7 +220,13 @@ async function* generarEventos(
           const salida = part.result as { tipo?: string; props?: unknown; error?: string };
           huboContenido = true;
           if (salida?.tipo) {
-            yield { type: 'surface', tipo: salida.tipo, props: salida.props };
+            yield {
+              type: 'surface',
+              tipo: salida.tipo,
+              props: salida.props,
+              tool: part.toolName,
+              parametros: part.args,
+            };
           } else {
             // La tool regresó un error de negocio (ej. "no se encontró esa
             // meta") en vez de un bloque -- nunca se descarta en silencio.
@@ -262,7 +272,7 @@ async function* generarEjecucion(ejecucion: Ejecucion): AsyncGenerator<EventoA2u
       yield { type: 'text', content: salida.error };
       return;
     }
-    yield { type: 'surface', tipo: salida.tipo, props: salida.props };
+    yield { type: 'surface', tipo: salida.tipo, props: salida.props, tool: ejecucion.tool, parametros: ejecucion.args };
   } catch (err) {
     console.error('[agent] fallo la ejecucion confirmada:', err);
     yield { type: 'error', message: `No se pudo completar la operacion: ${String(err)}` };
