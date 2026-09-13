@@ -259,6 +259,134 @@ export async function archivarMeta(userId: string, metaId: string): Promise<Meta
   };
 }
 
+export interface AportacionProgramada {
+  id: string;
+  metaId: string;
+  monto: number;
+  periodicidad: 'semanal' | 'quincenal' | 'mensual';
+  fechaInicio: string;
+  estatus: 'activa' | 'completada' | 'cancelada';
+}
+
+const APORTACIONES_PROGRAMADAS_MOCK: AportacionProgramada[] = [];
+
+export async function crearAportacionProgramada(
+  userId: string,
+  metaId: string,
+  monto: number,
+  periodicidad: 'semanal' | 'quincenal' | 'mensual',
+  fechaInicio: string,
+): Promise<AportacionProgramada | { error: string }> {
+  if (USE_MOCK) {
+    const meta = METAS_MOCK.find((m) => m.id === metaId && m.estatus === 'activa');
+    if (!meta) return { error: 'Meta no encontrada, no pertenece al usuario, o no está activa.' };
+
+    const aportacion: AportacionProgramada = {
+      id: `aportacion-mock-${APORTACIONES_PROGRAMADAS_MOCK.length + 1}`,
+      metaId,
+      monto,
+      periodicidad,
+      fechaInicio,
+      estatus: 'activa',
+    };
+    APORTACIONES_PROGRAMADAS_MOCK.push(aportacion);
+    return aportacion;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | {
+        id: string;
+        meta_id: string;
+        monto: string | number;
+        periodicidad: AportacionProgramada['periodicidad'];
+        fecha_inicio: string;
+        estatus: AportacionProgramada['estatus'];
+      }
+  >('crear_aportacion_programada', { userId, metaId, monto, periodicidad, fechaInicio });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    metaId: resultado.meta_id,
+    monto: Number(resultado.monto),
+    periodicidad: resultado.periodicidad,
+    fechaInicio: resultado.fecha_inicio,
+    estatus: resultado.estatus,
+  };
+}
+
+export async function getAportacionesProgramadas(
+  userId: string,
+  opciones: { metaId?: string; incluirCanceladas?: boolean } = {},
+): Promise<AportacionProgramada[]> {
+  const { metaId, incluirCanceladas = false } = opciones;
+
+  if (USE_MOCK) {
+    let resultado = incluirCanceladas
+      ? APORTACIONES_PROGRAMADAS_MOCK
+      : APORTACIONES_PROGRAMADAS_MOCK.filter((a) => a.estatus !== 'cancelada');
+    if (metaId) resultado = resultado.filter((a) => a.metaId === metaId);
+    return resultado;
+  }
+
+  const rows = await llamarTool<
+    Array<{
+      id: string;
+      meta_id: string;
+      monto: string | number;
+      periodicidad: AportacionProgramada['periodicidad'];
+      fecha_inicio: string;
+      estatus: AportacionProgramada['estatus'];
+    }>
+  >('get_aportaciones_programadas', { userId, metaId, incluirCanceladas });
+
+  return rows.map((a) => ({
+    id: a.id,
+    metaId: a.meta_id,
+    monto: Number(a.monto),
+    periodicidad: a.periodicidad,
+    fechaInicio: a.fecha_inicio,
+    estatus: a.estatus,
+  }));
+}
+
+export async function cancelarAportacionProgramada(
+  userId: string,
+  aportacionId: string,
+): Promise<AportacionProgramada | { error: string }> {
+  if (USE_MOCK) {
+    const aportacion = APORTACIONES_PROGRAMADAS_MOCK.find((a) => a.id === aportacionId && a.estatus === 'activa');
+    if (!aportacion) return { error: 'Plan no encontrado o ya no está activo.' };
+    aportacion.estatus = 'cancelada';
+    return aportacion;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | {
+        id: string;
+        meta_id: string;
+        monto: string | number;
+        periodicidad: AportacionProgramada['periodicidad'];
+        fecha_inicio: string;
+        estatus: AportacionProgramada['estatus'];
+      }
+  >('cancelar_aportacion_programada', { userId, aportacionId });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    metaId: resultado.meta_id,
+    monto: Number(resultado.monto),
+    periodicidad: resultado.periodicidad,
+    fechaInicio: resultado.fecha_inicio,
+    estatus: resultado.estatus,
+  };
+}
+
 export interface FiltroTransacciones {
   limite?: number;
   categoria?: string;
