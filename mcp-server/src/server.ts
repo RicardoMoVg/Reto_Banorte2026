@@ -1151,13 +1151,37 @@ server.tool(
         [userId, contactoId, tipo, monto, concepto ?? null],
       );
 
+      /**
+       * El movimiento cuelga de una CUENTA, no queda suelto.
+       *
+       * `cuenta_id` no es decorativo: el trigger trg_actualizar_saldo_cuenta
+       * solo corre `if new.cuenta_id is not null`. Insertarlo en null hacia
+       * que la suma de transacciones bajara pero `cuentas.saldo` se quedara
+       * igual -- dos saldos distintos para el mismo usuario segun quien
+       * preguntara.
+       *
+       * Se usa la cuenta de debito (de donde sale el dinero de una
+       * transferencia); si no hay, la primera que tenga.
+       */
+      const cuenta = await cliente.query(
+        `select id from cuentas where usuario_id = $1
+         order by (tipo = 'debito') desc, id
+         limit 1`,
+        [userId],
+      );
+
+      if (cuenta.rows.length === 0) {
+        throw new Error('El usuario no tiene ninguna cuenta de la cual descontar la transferencia.');
+      }
+
       // 'recibida' es un cobro: entra dinero, monto positivo.
       const signo = tipo === 'recibida' ? 1 : -1;
       await cliente.query(
-        `insert into transacciones (id, usuario_id, descripcion, monto, categoria, fecha)
-         values ('tx-' || gen_random_uuid(), $1, $2, $3, 'transferencia', now())`,
+        `insert into transacciones (id, usuario_id, cuenta_id, descripcion, monto, categoria, fecha)
+         values ('tx-' || gen_random_uuid(), $1, $2, $3, $4, 'transferencia', now())`,
         [
           userId,
+          cuenta.rows[0].id,
           tipo === 'recibida' ? `Cobro de ${nombre}` : `Transferencia a ${nombre}`,
           signo * monto,
         ],
