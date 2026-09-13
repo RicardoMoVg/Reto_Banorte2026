@@ -3,9 +3,11 @@ import {
   getInstrumentos,
   getMetasUsuario,
   getPlanesPago,
+  getPolizasSeguro,
   getSaldoUsuario,
   getTarjetasCredito,
   getTransaccionesRecientes,
+  simularPlanPago,
 } from '@/lib/mcp/mcp-client';
 import {
   schemaProgresoMeta,
@@ -199,12 +201,18 @@ export function buildA2uiTools(userId: string) {
 
     armarTarjetaAccion: tool({
       description:
-        'Arma una tarjeta de acción a la medida, eligiendo de qué piezas se ' +
+        'Arma una tarjeta de accion a la medida, eligiendo de que piezas se ' +
         'compone (una cifra destacada, un resumen, una tabla, opciones a ' +
-        'elegir, una nota). Úsala cuando ninguna de las tarjetas fijas ' +
-        'encaje: reestructurar una tarjeta de crédito a distintos plazos, ' +
-        'comparar instrumentos de inversión, o cualquier caso donde el ' +
-        'usuario deba escoger entre alternativas.',
+        'elegir, una nota). Es la tool preferida siempre que el usuario deba ' +
+        'ESCOGER entre alternativas. Casos que cubre hoy, con el valor de ' +
+        '`fuente` que le toca a la pieza "opciones": ' +
+        'reestructurar el saldo de la tarjeta a plazos -> "planes-pago"; ' +
+        'invertir o comparar rendimientos -> "instrumentos"; ' +
+        'elegir una meta de ahorro -> "metas"; ' +
+        'contratar o revisar un seguro -> "polizas"; ' +
+        'fijar un limite de gasto mensual para una categoria -> ' +
+        '"limites-presupuesto" (manda `parametro` con la categoria, ej. "comida"); ' +
+        'cuanto pagar de la tarjeta o como evitar intereses -> "pagos-tarjeta".',
       parameters: schemaTarjetaAccion,
       execute: async ({
         intencion,
@@ -218,7 +226,74 @@ export function buildA2uiTools(userId: string) {
         const tabla = await datosReferenciables(userId);
 
         /** Expande una `fuente` a filas reales del MCP. */
-        async function filasDe(fuente: string) {
+        async function filasDe(fuente: string, parametro?: string) {
+          if (fuente === 'polizas') {
+            const polizas = await getPolizasSeguro(userId);
+            return polizas.map((p) => ({
+              id: p.id,
+              tituloOpcion: p.cobertura,
+              subtitulo: `Seguro de ${p.tipo} · ${p.estatus}`,
+              valorDestacado: `${formatoMXN.format(p.primaMensual)}/mes`,
+            }));
+          }
+
+          if (fuente === 'limites-presupuesto') {
+            // El promedio sale del historial real; los porcentajes son
+            // política de producto, no un dato del banco -- por eso el
+            // subtítulo los declara en vez de presentarlos como cifra dada.
+            const categoria = (parametro ?? '').trim().toLowerCase();
+            if (!categoria) return [];
+
+            const transacciones = await getTransaccionesRecientes(userId, {
+              limite: 200,
+              categoria,
+            });
+            const gastos = transacciones.filter((t) => t.monto < 0);
+            if (gastos.length === 0) return [];
+
+            const meses = new Set(gastos.map((t) => t.fecha.slice(0, 7))).size || 1;
+            const promedio = gastos.reduce((acc, t) => acc + Math.abs(t.monto), 0) / meses;
+
+            return [
+              { id: 'estricto', factor: 0.8, titulo: 'Estricto', nota: '20% abajo de tu promedio' },
+              { id: 'recomendado', factor: 0.95, titulo: 'Recomendado', nota: '5% abajo de tu promedio' },
+              { id: 'holgado', factor: 1.15, titulo: 'Holgado', nota: 'Margen para imprevistos' },
+            ].map((o) => ({
+              id: o.id,
+              tituloOpcion: o.titulo,
+              subtitulo: o.nota,
+              valorDestacado: `${formatoMXN.format(Math.round(promedio * o.factor))}/mes`,
+            }));
+          }
+
+          if (fuente === 'pagos-tarjeta') {
+            const [tarjeta] = await getTarjetasCredito(userId);
+            if (!tarjeta || tarjeta.saldoActual <= 0) return [];
+
+            // Pagar todo es la única opción sin intereses; el costo de las
+            // demás lo calcula el simulador del MCP con la tasa real de la
+            // tarjeta, no una regla inventada aquí.
+            const diferidos = await Promise.all(
+              [3, 6].map((plazo) => simularPlanPago(tarjeta.saldoActual, plazo, tarjeta.tasaAnual)),
+            );
+
+            return [
+              {
+                id: 'total',
+                tituloOpcion: 'Pagar todo este mes',
+                subtitulo: 'La única opción que no genera intereses',
+                valorDestacado: formatoMXN.format(tarjeta.saldoActual),
+              },
+              ...diferidos.map((d) => ({
+                id: `diferido-${d.plazoMeses}`,
+                tituloOpcion: `Diferir a ${d.plazoMeses} meses`,
+                subtitulo: `Tasa ${d.tasaAnual}% anual`,
+                valorDestacado: `${formatoMXN.format(Math.round(d.pagoMensual))}/mes`,
+                advertencia: `Pagarías ${formatoMXN.format(Math.round(d.totalIntereses))} de intereses.`,
+              })),
+            ];
+          }
+
           if (fuente === 'planes-pago') {
             const [tarjeta] = await getTarjetasCredito(userId);
             if (!tarjeta) return [];
@@ -276,12 +351,12 @@ export function buildA2uiTools(userId: string) {
             }
 
             if (c.elemento === 'opciones') {
-              const opciones = await filasDe(c.fuente ?? 'metas');
+              const opciones = await filasDe(c.fuente ?? 'metas', c.parametro);
               return opciones.length > 0 ? { elemento: 'opciones' as const, opciones } : null;
             }
 
             if (c.elemento === 'tabla') {
-              const filas = await filasDe(c.fuente ?? 'metas');
+              const filas = await filasDe(c.fuente ?? 'metas', c.parametro);
               if (filas.length === 0) return null;
               return {
                 elemento: 'tabla' as const,

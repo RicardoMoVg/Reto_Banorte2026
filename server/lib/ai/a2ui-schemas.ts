@@ -198,11 +198,31 @@ export const schemaTarjetaAccion = z.object({
           .optional()
           .describe('Solo para "resumen": las filas, cada una referenciando un idDato válido.'),
         fuente: z
-          .enum(['planes-pago', 'instrumentos', 'metas'])
+          .enum([
+            'planes-pago',
+            'instrumentos',
+            'metas',
+            'polizas',
+            'limites-presupuesto',
+            'pagos-tarjeta',
+          ])
           .optional()
           .describe(
-            'Solo para "opciones" y "tabla": de dónde salen las filas. "planes-pago": plazos de ' +
-              'reestructura de la tarjeta. "instrumentos": opciones de inversión. "metas": metas de ahorro.',
+            'Solo para "opciones" y "tabla": de dónde salen las filas. ' +
+              '"planes-pago": plazos para reestructurar TODO el saldo de la tarjeta. ' +
+              '"instrumentos": opciones de inversión con su rendimiento. ' +
+              '"metas": metas de ahorro del usuario. ' +
+              '"polizas": seguros contratados y cotizados. ' +
+              '"limites-presupuesto": límites sugeridos para una categoría de gasto ' +
+              '(requiere `parametro` con la categoría, ej. "comida"). ' +
+              '"pagos-tarjeta": cuánto pagar de la tarjeta este mes y qué intereses genera cada opción.',
+          ),
+        parametro: z
+          .string()
+          .optional()
+          .describe(
+            'Dato extra que necesita la fuente. Hoy solo lo usa "limites-presupuesto": ' +
+              'la categoría de gasto, ej. "comida", "transporte", "suscripciones".',
           ),
         texto: z.string().optional().describe('Solo para "nota": la línea de texto.'),
         tono: z.enum(['info', 'advertencia']).optional().describe('Solo para "nota".'),
