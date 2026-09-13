@@ -115,6 +115,13 @@ export const schemaCrearTransaccion = z.object({
 
 // --- Inversiones ---
 
+export const schemaMostrarInstrumentos = z.object({
+  tipo: z.enum(['accion', 'fondo', 'cetes', 'etf', 'divisa']).optional().describe('Filtra por tipo de instrumento.'),
+  riesgo: z.enum(['bajo', 'medio', 'alto']).optional().describe('Filtra por nivel de riesgo.'),
+  titulo: z.string().describe('Encabezado, ej. "Instrumentos disponibles".'),
+  mensajeAgente: z.string().describe('Mensaje breve, una línea.'),
+});
+
 export const schemaActualizarPerfilInversion = z.object({
   toleranciaRiesgo: z.enum(['conservador', 'moderado', 'agresivo']),
   horizonteAnios: z.number().int().positive(),

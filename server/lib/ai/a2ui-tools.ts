@@ -11,6 +11,7 @@ import {
   getCuentasUsuario,
   crearTransaccion,
   actualizarPerfilInversion,
+  getInstrumentos,
   comprarPosicion,
   venderPosicion,
   getHistorialPrecio,
@@ -44,6 +45,7 @@ import {
   schemaCrearAportacionProgramada,
   schemaCancelarAportacionProgramada,
   schemaCrearTransaccion,
+  schemaMostrarInstrumentos,
   schemaActualizarPerfilInversion,
   schemaComprarPosicion,
   schemaVenderPosicion,
@@ -308,6 +310,26 @@ export function buildA2uiTools(userId: string) {
         return {
           tipo: 'TarjetaSaldo' as const,
           props: { titulo: 'Saldo disponible', monto: saldo, mensajeAgente },
+        };
+      },
+    }),
+
+    mostrarInstrumentos: tool({
+      description:
+        'Muestra el catálogo de instrumentos de inversión disponibles (no solo los que ya tiene el ' +
+        'usuario), con su precio actual. Úsala cuando pregunte qué opciones hay para invertir, antes de ' +
+        'comprar/vender algo.',
+      parameters: schemaMostrarInstrumentos,
+      execute: async ({ tipo, riesgo, titulo, mensajeAgente }) => {
+        const instrumentos = await getInstrumentos({ tipo, riesgo });
+
+        return {
+          tipo: 'GraficoBarras_H' as const,
+          props: {
+            titulo,
+            categorias: instrumentos.map((i) => ({ nombre: i.nombre, monto: i.precioActual })),
+            mensajeAgente,
+          },
         };
       },
     }),
