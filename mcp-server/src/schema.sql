@@ -1,9 +1,75 @@
--- Esquema mínimo para el hackathon. Ajustar/normalizar según lo que exponga
--- el core bancario real; esto es lo que necesita el catálogo de LEGO actual.
+-- Esquema para el hackathon, cubriendo las 6 categorías del brief
+-- ("Territorio: servicios y productos financieros"): banca personal,
+-- inversiones, crédito, pagos, seguros, educación financiera. No todas
+-- tienen tools de MCP ni UI todavía -- el equipo elige cuál(es) usar de
+-- verdad en la demo (ver constitution.md sección 1: "un problema pequeño,
+-- resuelto completo" vale más que cubrir las 6 a medias).
+--
+-- Convención: ids como `text` (no serial/uuid) para que el seed pueda usar
+-- valores legibles ("meta-1", "tarjeta-1"); montos en `numeric`; fechas en
+-- `timestamptz`; estados como `text` con `check` en vez de tipos ENUM de
+-- Postgres, para mantenerlo simple.
+
+-- ============================================================
+-- Compartido
+-- ============================================================
 
 create table if not exists usuarios (
   id text primary key,
-  nombre text not null
+  nombre text not null,
+  usuario text,              -- @handle que el titular elige, ej. '@ricardo.moreno'
+  telefono text,
+  fecha_nacimiento date,
+  creado_en timestamptz not null default now() -- de aquí sale "cliente desde"
+);
+
+-- migración idempotente para bases ya desplegadas antes de que existieran
+-- estos campos (antes solo `nombre`, ver constitution.md -- perfil real del
+-- titular en vez de datos de ejemplo del lado del cliente).
+alter table usuarios add column if not exists usuario text;
+alter table usuarios add column if not exists telefono text;
+alter table usuarios add column if not exists fecha_nacimiento date;
+alter table usuarios add column if not exists creado_en timestamptz not null default now();
+
+-- Dashboard "anclado" del usuario (Paso 5, pendiente en el cliente). Guarda
+-- la RECETA para regenerar un bloque -- nunca el valor numérico resuelto
+-- (ver constitution.md 3.2): qué componente, qué tool de a2ui-tools.ts, y
+-- con qué parámetros. Al rehidratar, el backend llama esa tool directo
+-- (sin pasar por el modelo) para traer el dato fresco del MCP.
+create table if not exists dashboard_widgets (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  componente text not null, -- nombre en el catálogo del cliente, ej. 'RastreadorMetas'
+  tool text not null,       -- tool de server/lib/ai/a2ui-tools.ts a re-ejecutar, ej. 'mostrarProgresoMeta'
+  parametros jsonb not null default '{}', -- argumentos que el modelo hubiera elegido, ej. {"metaId":"meta-1"}
+  mensaje_agente text,      -- texto de contexto -- este sí se congela, no es un dato financiero
+  orden integer not null default 0,
+  -- chrome del TABLERO (client/lib/a2ui/TableroProvider.tsx), no del bloque
+  -- -- igual que ese provider, ningún componente A2UI sabe que existen.
+  ancho text not null default 'completo' check (ancho in ('completo', 'medio')),
+  lado text not null default 'izquierda' check (lado in ('izquierda', 'derecha')),
+  creado_en timestamptz not null default now()
+);
+
+-- migración idempotente para bases ya desplegadas antes de que existieran
+-- `ancho`/`lado`.
+alter table dashboard_widgets add column if not exists ancho text not null default 'completo';
+alter table dashboard_widgets drop constraint if exists dashboard_widgets_ancho_check;
+alter table dashboard_widgets add constraint dashboard_widgets_ancho_check check (ancho in ('completo', 'medio'));
+alter table dashboard_widgets add column if not exists lado text not null default 'izquierda';
+alter table dashboard_widgets drop constraint if exists dashboard_widgets_lado_check;
+alter table dashboard_widgets add constraint dashboard_widgets_lado_check check (lado in ('izquierda', 'derecha'));
+
+-- ============================================================
+-- 1. Banca personal — cuentas, movimientos, control de gasto
+-- ============================================================
+
+create table if not exists cuentas (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  tipo text not null check (tipo in ('debito', 'ahorro', 'nomina')),
+  alias text not null,
+  saldo numeric not null default 0
 );
 
 create table if not exists metas (
@@ -11,17 +77,323 @@ create table if not exists metas (
   usuario_id text not null references usuarios(id),
   titulo text not null,
   monto_actual numeric not null default 0,
-  monto_objetivo numeric not null check (monto_objetivo > 0)
+  monto_objetivo numeric not null check (monto_objetivo > 0),
+  estatus text not null default 'activa' check (estatus in ('activa', 'completada', 'archivada'))
+);
+
+-- migración idempotente para bases ya desplegadas antes de que existiera
+-- `estatus` (archivar = borrado lógico, nunca se hace delete de una meta).
+alter table metas add column if not exists estatus text not null default 'activa';
+alter table metas drop constraint if exists metas_estatus_check;
+alter table metas add constraint metas_estatus_check check (estatus in ('activa', 'completada', 'archivada'));
+
+-- El COMPROMISO de aportar a una meta periódicamente (ej. "$634/mes por 6
+-- meses") -- distinto de `aportar_a_meta`, que registra una aportación YA
+-- hecha. Esta tabla es la "receta" del plan; cada aportación real seguirá
+-- pasando por `aportar_a_meta` (no hay job que la ejecute sola).
+create table if not exists aportaciones_programadas (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  meta_id text not null references metas(id),
+  monto numeric not null check (monto > 0),
+  periodicidad text not null check (periodicidad in ('semanal', 'quincenal', 'mensual')),
+  fecha_inicio date not null,
+  estatus text not null default 'activa' check (estatus in ('activa', 'completada', 'cancelada'))
 );
 
 create table if not exists transacciones (
   id text primary key,
   usuario_id text not null references usuarios(id),
+  cuenta_id text references cuentas(id),
   descripcion text not null,
   monto numeric not null,
   categoria text,
   fecha timestamptz not null default now()
 );
 
+-- Mantiene cuentas.saldo consistente con sus transacciones, sin recalcular
+-- la suma completa en cada escritura (solo suma el monto nuevo). Asume que
+-- transacciones es append-only (nunca se editan/borran movimientos pasados,
+-- solo se insertan nuevos, como en un banco real) -- si algún día se
+-- necesita permitir editar/borrar una transacción, este trigger hay que
+-- extenderlo (revertir el monto viejo, no solo sumar el nuevo).
+create or replace function actualizar_saldo_cuenta() returns trigger as $$
+begin
+  if new.cuenta_id is not null then
+    update cuentas set saldo = saldo + new.monto where id = new.cuenta_id;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_actualizar_saldo_cuenta on transacciones;
+create trigger trg_actualizar_saldo_cuenta
+  after insert on transacciones
+  for each row
+  execute function actualizar_saldo_cuenta();
+
+-- ============================================================
+-- 2. Inversiones — perfilamiento, portafolios, simulación
+-- ============================================================
+
+create table if not exists perfiles_inversion (
+  usuario_id text primary key references usuarios(id),
+  tolerancia_riesgo text not null check (tolerancia_riesgo in ('conservador', 'moderado', 'agresivo')),
+  horizonte_anios integer not null check (horizonte_anios > 0)
+);
+
+create table if not exists instrumentos (
+  id text primary key,
+  nombre text not null,
+  tipo text not null check (tipo in ('accion', 'fondo', 'cetes', 'etf', 'divisa')),
+  riesgo text not null check (riesgo in ('bajo', 'medio', 'alto')),
+  -- % anual, para poder simular ("si invierto X..."). Para 'divisa' esto es
+  -- una apreciación estimada contra MXN, no un rendimiento fijo real (una
+  -- divisa fluctúa) -- simplificación aceptada para el demo, no modelamos
+  -- tipo de cambio en vivo.
+  rendimiento_anual_estimado numeric not null,
+  -- Precio/tipo de cambio base para el "precio simulado" (ver
+  -- mcp-server/src/precios.ts) -- NO es un precio en vivo real, es la base
+  -- sobre la que se calcula una oscilación determinista por tiempo
+  -- (sin(), semilla por id) para que se vea "vivo" sin necesidad de cron ni
+  -- de guardar historial: cualquier punto en el tiempo se puede recalcular
+  -- con la misma fórmula, incluso hacia el pasado (para graficar).
+  precio_base numeric not null default 1
+);
+
+-- migración idempotente para bases ya desplegadas antes de que existiera
+-- `precio_base`.
+alter table instrumentos add column if not exists precio_base numeric not null default 1;
+
+-- migración idempotente: agrega 'divisa' como tipo válido de instrumento.
+alter table instrumentos drop constraint if exists instrumentos_tipo_check;
+alter table instrumentos add constraint instrumentos_tipo_check check (tipo in ('accion', 'fondo', 'cetes', 'etf', 'divisa'));
+
+create table if not exists posiciones_portafolio (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  instrumento_id text not null references instrumentos(id),
+  cantidad numeric not null check (cantidad > 0),
+  precio_promedio numeric not null check (precio_promedio > 0),
+  activa boolean not null default true
+);
+
+-- migración idempotente: `activa` es el borrado lógico al vender por
+-- completo -- `cantidad`/`precio_promedio` se quedan como quedaron (no se
+-- ponen en 0), es el registro de lo que se tenía antes de vender.
+alter table posiciones_portafolio add column if not exists activa boolean not null default true;
+
+-- ============================================================
+-- 3. Crédito — precalificación, amortización, refinanciamiento
+-- ============================================================
+
+-- Catálogo de productos de crédito ofrecidos por el banco (no lo que ya
+-- tiene el usuario) -- equivalente a `instrumentos` en inversiones, para
+-- poder ver qué hay disponible antes de solicitar.
+create table if not exists productos_credito (
+  id text primary key,
+  tipo text not null check (tipo in ('personal', 'hipotecario', 'automotriz', 'tarjeta')),
+  nombre text not null,
+  tasa_referencia numeric not null, -- % anual indicativo
+  monto_maximo numeric not null check (monto_maximo > 0),
+  plazo_maximo_meses integer not null check (plazo_maximo_meses > 0),
+  descripcion text
+);
+
+create table if not exists tarjetas_credito (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  alias text not null,
+  limite_credito numeric not null check (limite_credito > 0),
+  saldo_actual numeric not null default 0,
+  tasa_anual numeric not null, -- % anual, usado para CAT
+  -- chrome del PLÁSTICO (pantalla Tarjetas), no de la línea de crédito en
+  -- sí: ninguna otra tool los toca. El CVV nunca vive aquí -- se genera al
+  -- vuelo (server/app/api/tarjetas/cvv/route.ts), nunca se guarda.
+  ultimos4 text,
+  vencimiento text, -- 'MM/AA'
+  marca text,
+  activa boolean not null default true
+);
+
+-- migración idempotente para bases ya desplegadas antes de que existieran
+-- estos campos.
+alter table tarjetas_credito add column if not exists ultimos4 text;
+alter table tarjetas_credito add column if not exists vencimiento text;
+alter table tarjetas_credito add column if not exists marca text;
+alter table tarjetas_credito add column if not exists activa boolean not null default true;
+
+-- Tarjeta de débito: liga a una cuenta (no a una línea de crédito propia)
+-- -- el plástico es solo una forma de gastar el saldo que ya tiene la
+-- cuenta, constitution.md 3.2 aplica igual: nunca se guarda un monto aquí.
+create table if not exists tarjetas_debito (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  cuenta_id text not null references cuentas(id),
+  alias text not null,
+  ultimos4 text,
+  vencimiento text,
+  marca text,
+  activa boolean not null default true
+);
+
+-- Un cargo individual a una tarjeta de crédito -- `tarjetas_credito` solo
+-- tenía `saldo_actual` agregado, sin historial de compras. `meses_msi` es
+-- null en una compra normal; se llena cuando se difiere a meses sin
+-- intereses (crear_compra_tarjeta la deja null, diferir_a_msi la fija).
+create table if not exists compras_tarjeta (
+  id text primary key,
+  tarjeta_id text not null references tarjetas_credito(id),
+  usuario_id text not null references usuarios(id),
+  descripcion text not null,
+  monto numeric not null check (monto > 0),
+  fecha timestamptz not null default now(),
+  meses_msi integer check (meses_msi > 0)
+);
+
+-- Mantiene tarjetas_credito.saldo_actual consistente con sus compras, mismo
+-- criterio que trg_actualizar_saldo_cuenta (append-only, solo suma en
+-- INSERT). Diferir a MSI no cambia el saldo total de la tarjeta -- solo
+-- cambia cómo se paga esa compra, no cuánto se debe.
+create or replace function actualizar_saldo_tarjeta() returns trigger as $$
+begin
+  update tarjetas_credito set saldo_actual = saldo_actual + new.monto where id = new.tarjeta_id;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_actualizar_saldo_tarjeta on compras_tarjeta;
+create trigger trg_actualizar_saldo_tarjeta
+  after insert on compras_tarjeta
+  for each row
+  execute function actualizar_saldo_tarjeta();
+
+create table if not exists solicitudes_credito (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  tipo text not null check (tipo in ('personal', 'hipotecario', 'automotriz', 'tarjeta')),
+  monto_solicitado numeric not null check (monto_solicitado > 0),
+  estatus text not null default 'pendiente' check (estatus in ('pendiente', 'aprobado', 'rechazado', 'cancelada')),
+  fecha timestamptz not null default now()
+);
+
+-- migración idempotente: agrega 'cancelada' como estatus válido (borrado
+-- lógico -- solo aplica a solicitudes que seguían 'pendiente').
+alter table solicitudes_credito drop constraint if exists solicitudes_credito_estatus_check;
+alter table solicitudes_credito add constraint solicitudes_credito_estatus_check check (estatus in ('pendiente', 'aprobado', 'rechazado', 'cancelada'));
+
+-- Un plan de pago/refinanciamiento posible para una tarjeta (ej. el
+-- ejemplo de la portada del PDF: "reestructura tu saldo a 12/18/24 meses").
+create table if not exists planes_pago (
+  id text primary key,
+  tarjeta_id text not null references tarjetas_credito(id),
+  plazo_meses integer not null check (plazo_meses > 0),
+  cat numeric not null,
+  pago_mensual numeric not null check (pago_mensual > 0)
+);
+
+-- ============================================================
+-- 4. Pagos — transferencias, cobros, conciliación
+-- ============================================================
+
+create table if not exists contactos_pago (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  nombre text not null,
+  clabe text,
+  activo boolean not null default true
+);
+
+-- migración idempotente: `activo` es el borrado lógico de un contacto (no
+-- se hace delete real -- transferencias.contacto_id lo sigue referenciando).
+alter table contactos_pago add column if not exists activo boolean not null default true;
+
+create table if not exists transferencias (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  contacto_id text references contactos_pago(id),
+  tipo text not null default 'enviada' check (tipo in ('enviada', 'recibida')), -- 'recibida' = cobro
+  monto numeric not null check (monto > 0),
+  concepto text,
+  estatus text not null default 'completada' check (estatus in ('pendiente', 'completada', 'fallida', 'cancelada')),
+  fecha timestamptz not null default now()
+);
+
+-- migración idempotente: agrega 'cancelada' como estatus válido (borrado
+-- lógico de una transferencia -- solo aplica a las que estaban 'pendiente').
+alter table transferencias drop constraint if exists transferencias_estatus_check;
+alter table transferencias add constraint transferencias_estatus_check check (estatus in ('pendiente', 'completada', 'fallida', 'cancelada'));
+
+-- ============================================================
+-- 5. Seguros — cotización, coberturas, siniestros
+-- ============================================================
+
+create table if not exists polizas_seguro (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  tipo text not null check (tipo in ('auto', 'vida', 'gmm', 'hogar')),
+  cobertura text not null,
+  prima_mensual numeric not null check (prima_mensual > 0),
+  vigencia_fin date not null,
+  estatus text not null default 'activa' check (estatus in ('cotizada', 'activa', 'vencida', 'cancelada'))
+);
+
+-- migración idempotente: agrega 'cancelada' como estatus válido (borrado
+-- lógico -- aplica a pólizas cotizadas o activas).
+alter table polizas_seguro drop constraint if exists polizas_seguro_estatus_check;
+alter table polizas_seguro add constraint polizas_seguro_estatus_check check (estatus in ('cotizada', 'activa', 'vencida', 'cancelada'));
+
+create table if not exists siniestros (
+  id text primary key,
+  poliza_id text not null references polizas_seguro(id),
+  descripcion text not null,
+  monto_reclamado numeric,
+  estatus text not null default 'en_revision' check (estatus in ('en_revision', 'aprobado', 'rechazado', 'pagado')),
+  fecha timestamptz not null default now()
+);
+
+-- ============================================================
+-- 6. Educación financiera — diagnóstico, metas, hábitos
+-- ============================================================
+-- (las "metas" ya están en la sección de banca personal, arriba)
+
+create table if not exists diagnosticos_financieros (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  puntaje integer not null check (puntaje between 0 and 100),
+  fecha timestamptz not null default now()
+);
+
+create table if not exists habitos_financieros (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  habito text not null,
+  racha_dias integer not null default 0 check (racha_dias >= 0),
+  activo boolean not null default true
+);
+
+-- migración idempotente: `activo` es el borrado lógico de un hábito.
+alter table habitos_financieros add column if not exists activo boolean not null default true;
+
+-- ============================================================
+-- Índices
+-- ============================================================
+
+create index if not exists idx_cuentas_usuario on cuentas(usuario_id);
 create index if not exists idx_metas_usuario on metas(usuario_id);
+create index if not exists idx_aportaciones_programadas_usuario on aportaciones_programadas(usuario_id);
 create index if not exists idx_transacciones_usuario on transacciones(usuario_id, fecha desc);
+create index if not exists idx_transacciones_cuenta on transacciones(cuenta_id);
+create index if not exists idx_posiciones_usuario on posiciones_portafolio(usuario_id);
+create index if not exists idx_tarjetas_usuario on tarjetas_credito(usuario_id);
+create index if not exists idx_compras_tarjeta_tarjeta on compras_tarjeta(tarjeta_id);
+create index if not exists idx_compras_tarjeta_usuario on compras_tarjeta(usuario_id, fecha desc);
+create index if not exists idx_solicitudes_usuario on solicitudes_credito(usuario_id);
+create index if not exists idx_planes_pago_tarjeta on planes_pago(tarjeta_id);
+create index if not exists idx_contactos_usuario on contactos_pago(usuario_id);
+create index if not exists idx_transferencias_usuario on transferencias(usuario_id, fecha desc);
+create index if not exists idx_polizas_usuario on polizas_seguro(usuario_id);
+create index if not exists idx_siniestros_poliza on siniestros(poliza_id);
+create index if not exists idx_diagnosticos_usuario on diagnosticos_financieros(usuario_id);
+create index if not exists idx_habitos_usuario on habitos_financieros(usuario_id);
+create index if not exists idx_dashboard_widgets_usuario on dashboard_widgets(usuario_id, orden);

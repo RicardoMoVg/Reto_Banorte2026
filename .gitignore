@@ -1,0 +1,19 @@
+# dependencias
+node_modules/
+agente/node_modules/
+
+# build de next
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# variables de entorno (NUNCA commitear: contienen API keys)
+.env
+.env.local
+.env*.local
+agente/env
+
+# varios
+.DS_Store
+*.log
