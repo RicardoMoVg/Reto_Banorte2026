@@ -1076,7 +1076,19 @@ export function buildA2uiTools(userId: string) {
         const contactos = await getContactosPago(userId, { nombre: nombreContacto });
 
         if (contactos.length === 0) {
-          return { error: `No se encontro ningun contacto guardado que coincida con "${nombreContacto}".` };
+          // El mensaje le dice al modelo QUE HACER, no solo que fallo: es
+          // lo que lee para decidir el siguiente paso. Sin la instruccion
+          // explicita, guardaba el contacto SIN la CLABE que el usuario ya
+          // le habia dado unos turnos antes, y luego proponia con un monto
+          // distinto al pedido.
+          return {
+            error:
+              `No hay ningun contacto guardado que coincida con "${nombreContacto}". ` +
+              'Si el usuario te dio un numero de cuenta o CLABE en esta conversacion, ' +
+              'guarda primero el contacto con `crearContactoPago` INCLUYENDO esa CLABE, ' +
+              'y despues vuelve a proponer la transferencia con el MISMO monto que pidio ' +
+              'al principio. Si no te dio CLABE, pidesela antes de guardar.',
+          };
         }
         if (contactos.length > 1) {
           return {
