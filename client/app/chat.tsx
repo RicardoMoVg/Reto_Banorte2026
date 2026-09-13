@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,13 +13,23 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Pantalla } from '../../components/ui/Pantalla';
-import { SurfaceRenderer } from '../../lib/a2ui/SurfaceRenderer';
-import { useAgent } from '../../lib/a2ui/AgentProvider';
-import { colores, espacio, radio, tipografia } from '../../lib/ui/theme';
+import { Pantalla } from '../components/ui/Pantalla';
+import { SurfaceRenderer } from '../lib/a2ui/SurfaceRenderer';
+import { useAgent } from '../lib/a2ui/AgentProvider';
+import { colores, espacio, radio, tipografia } from '../lib/ui/theme';
 
 /**
- * La ventana de conversación — lo que antes era App.tsx completo.
+ * La conversación con el agente.
+ *
+ * Se presenta como MODAL (ver el `presentation: 'modal'` de
+ * app/_layout.tsx), no como pestaña: se abre encima de la ventana en la
+ * que estabas y se cierra para volver ahí mismo, como una conversación de
+ * Messenger. Por eso vive fuera de `(tabs)/` — una pantalla no puede ser
+ * pestaña y modal a la vez.
+ *
+ * Consecuencia de diseño: al cerrar, el usuario regresa al contexto que
+ * tenía (Inicio o Perfil) en vez de quedarse en una pestaña aparte; el
+ * bloque que acaba de generar ya está en su tablero.
  *
  * Cambios respecto a esa versión: el estado del stream ahora vive en
  * <AgentProvider> (para compartirlo con Inicio), y se agregó scroll
@@ -42,7 +53,21 @@ export default function Chat() {
   }
 
   return (
-    <Pantalla titulo="Mosaico" subtitulo="Tu asistente financiero.">
+    <Pantalla
+      titulo="Mosaico"
+      subtitulo="Tu asistente financiero."
+      accion={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Cerrar conversación"
+          hitSlop={espacio.md}
+          onPress={() => router.back()}
+          style={({ pressed }) => [styles.cerrar, pressed && styles.botonPresionado]}
+        >
+          <Ionicons name="close" size={20} color={colores.texto} />
+        </Pressable>
+      }
+    >
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -168,6 +193,14 @@ const styles = StyleSheet.create({
     backgroundColor: colores.marca,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cerrar: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radio.completo,
+    backgroundColor: colores.superficieSutil,
   },
   botonInactivo: { opacity: 0.35 },
   botonPresionado: { opacity: 0.75 },

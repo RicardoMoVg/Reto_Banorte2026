@@ -36,8 +36,9 @@ const MAX_BLOQUES = 4;
  *
  * Es el lienzo de los bloques A2UI — el usuario lo "edita" hablándole al
  * agente, no arrastrando widgets: cada pregunta produce un bloque y el
- * bloque aterriza aquí. Por eso el botón flotante lleva a la conversación
- * en vez de abrir un catálogo de componentes.
+ * bloque aterriza aquí. El botón que abre esa conversación es global y
+ * vive en `(tabs)/_layout.tsx`, no aquí: desde que el chat es modal hace
+ * falta poder invocarlo desde cualquier ventana.
  *
  * Va sobre <PantallaMarca> (el degradado) y los bloques se ven como
  * tarjetas blancas encima. Eso funciona porque cada bloque trae su propio
@@ -45,7 +46,7 @@ const MAX_BLOQUES = 4;
  * claros de `tipografia` — sobre el degradado hay que usar blanco.
  */
 export default function Inicio() {
-  const { mensajes, cargando, enviar } = useAgent();
+  const { mensajes, enviar } = useAgent();
   const { perfil } = useSesion();
   const insets = useSafeAreaInsets();
   const [avisos, setAvisos] = useState(false);
@@ -142,21 +143,6 @@ export default function Inicio() {
         </Text>
       </ScrollView>
 
-      {/* Botón flotante: la vía rápida al agente, que es como se edita esta
-          vista. Va sobre el scroll, no dentro, para que no se vaya con él. */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Preguntar a Mosaico"
-        onPress={() => router.push('/chat')}
-        style={({ pressed }) => [styles.flotante, pressed && styles.presionado]}
-      >
-        <Ionicons
-          name={cargando ? 'ellipsis-horizontal' : 'sparkles'}
-          size={24}
-          color={colores.textoSobreAcento}
-        />
-      </Pressable>
-
       {avisos ? (
         <>
           <Pressable
@@ -235,22 +221,6 @@ const styles = StyleSheet.create({
 
   nota: { fontSize: 11, lineHeight: 16, color: vidrio.textoTenue },
 
-  flotante: {
-    position: 'absolute',
-    right: espacio.lg,
-    bottom: espacio.lg,
-    width: 60,
-    height: 60,
-    borderRadius: radio.completo,
-    backgroundColor: colores.acento,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-  },
 
   telon: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
   panelAvisos: {

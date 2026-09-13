@@ -35,19 +35,27 @@ estructura de `app/` ES el mapa de rutas:
 app/
 ├── _layout.tsx           # layout raíz: providers + <Stack> con las rutas protegidas. No UI.
 ├── login.tsx             # Inicio de sesión → "/login"   (sin sesión, es lo único alcanzable)
+├── chat.tsx              # Mosaico         → "/chat"     (MODAL, encima de la pestaña actual)
 ├── editar-perfil.tsx     # Editar perfil   → "/editar-perfil"
 └── (tabs)/
-    ├── _layout.tsx       # el tab bar (las tres ventanas)
+    ├── _layout.tsx       # el tab bar (2 pestañas) + <BotonMosaico /> global
     ├── index.tsx         # Inicio  → "/"
-    ├── chat.tsx          # Mosaico → "/chat" (lo que antes era App.tsx)
     └── perfil.tsx        # Perfil  → "/perfil"
 ```
 
-Las dos rutas fuera de `(tabs)/` lo están por razones distintas: `login`
-porque el tab bar no debe existir sin sesión, y `editar-perfil` porque se
-abre ENCIMA de las pestañas (se llega solo por el botón de Perfil y se sale
-con la flecha de regreso). Una ventana que sí sea un destino permanente va
-dentro de `(tabs)/`.
+Las tres rutas fuera de `(tabs)/` lo están por razones distintas:
+
+- `login` — el tab bar no debe existir sin sesión.
+- `chat` — se presenta como **modal** (`presentation: 'modal'`): se abre
+  encima de donde estés y al cerrarse te devuelve ahí mismo, como una
+  conversación de Messenger. Una conversación no es un destino al que uno
+  "va" y se queda. **Por eso no es pestaña**, y por eso el botón que la
+  abre (`<BotonMosaico />`) se monta en el layout de tabs y no dentro de
+  una ventana: desde cualquier pantalla se tiene que poder invocar.
+- `editar-perfil` — se abre encima de las pestañas, solo desde el botón de
+  Perfil.
+
+Una ventana que sí sea un destino permanente va dentro de `(tabs)/`.
 
 - `lib/ui/theme.ts` — tokens de diseño (color, espacio, radio, tipografía).
   Única fuente de verdad del look; no hardcodees hex nuevos.

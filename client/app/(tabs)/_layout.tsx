@@ -1,8 +1,17 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router';
+import { View } from 'react-native';
+import { BotonMosaico } from '../../components/ui/BotonMosaico';
 import { colores, espacio, vidrio } from '../../lib/ui/theme';
 
 /**
+ * Las dos ventanas permanentes de la app.
+ *
+ * Mosaico ya NO es pestaña: se abre como modal encima de donde estés (ver
+ * app/chat.tsx), y se invoca con <BotonMosaico />, que se monta aquí para
+ * quedar sobre las dos pantallas. Una conversación no es un destino al que
+ * uno "va" y se queda: se abre, se resuelve algo y se cierra.
+ *
  * Las tres ventanas de la app. El orden del tab bar es el orden de uso
  * esperado: se entra a Inicio, se pregunta en Mosaico, Perfil es ocasional.
  *
@@ -16,8 +25,9 @@ import { colores, espacio, vidrio } from '../../lib/ui/theme';
  */
 export default function LayoutTabs() {
   return (
-    <Tabs
-      screenOptions={{
+    <View style={{ flex: 1 }}>
+      <Tabs
+        screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colores.acento,
         tabBarInactiveTintColor: vidrio.textoTenue,
@@ -37,15 +47,6 @@ export default function LayoutTabs() {
         }}
       />
       <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Mosaico',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="perfil"
         options={{
           title: 'Perfil',
@@ -54,6 +55,9 @@ export default function LayoutTabs() {
           ),
         }}
       />
-    </Tabs>
+      </Tabs>
+
+      <BotonMosaico />
+    </View>
   );
 }
