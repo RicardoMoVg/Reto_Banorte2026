@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Platform,
   ActivityIndicator,
   Animated,
   Dimensions,
@@ -90,6 +91,14 @@ const OPCIONES_MOVIMIENTO: { icono: keyof typeof Ionicons.glyphMap; texto: strin
   { icono: 'people-outline', texto: 'Dividir cuenta' },
   { icono: 'alert-circle-outline', texto: 'Desconocer cargo' },
 ];
+
+/**
+ * El driver nativo de animaciones no existe en web: ahi RN avisa que se
+ * cae a animacion por JS. Se activa solo en nativo, que es donde si
+ * aporta (saca la animacion del hilo de JS) -- en web el resultado visual
+ * es el mismo, nomas sin la advertencia en consola.
+ */
+const USAR_DRIVER_NATIVO = Platform.OS !== 'web';
 
 type Filtro = 'todos' | 'ingresos' | 'egresos';
 
@@ -221,7 +230,7 @@ export default function Movimientos() {
     setSeleccionado(m);
     Animated.spring(sheetAnim, {
       toValue: 1,
-      useNativeDriver: true,
+      useNativeDriver: USAR_DRIVER_NATIVO,
       damping: 20,
       stiffness: 200,
     }).start();
@@ -231,7 +240,7 @@ export default function Movimientos() {
     Animated.timing(sheetAnim, {
       toValue: 0,
       duration: 200,
-      useNativeDriver: true,
+      useNativeDriver: USAR_DRIVER_NATIVO,
     }).start(() => setSeleccionado(null));
   }
 
@@ -626,10 +635,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radio.lg + 8,
     paddingHorizontal: espacio.lg,
     paddingBottom: espacio.xl,
-    shadowColor: '#000000',
-    shadowOpacity: 0.25,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: -8 },
+    // Ver la nota en BotonMosaico: los `shadow*` estan deprecados en
+    // react-native-web y boxShadow si tiene tipo en RN 0.86.
+    boxShadow: '0px -8px 24px rgba(0, 0, 0, 0.25)',
     elevation: 16,
   },
   sheetHandleZone: { alignItems: 'center', paddingVertical: espacio.md },

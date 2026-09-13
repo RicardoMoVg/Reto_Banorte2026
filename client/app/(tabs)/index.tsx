@@ -93,23 +93,27 @@ export default function Inicio() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {bloques.length === 0 ? (
-          <Tarjeta>
-            <View style={styles.vacio}>
-              <Ionicons name="grid-outline" size={26} color={colores.marca} />
-              <Text style={styles.vacioTitulo}>Tu tablero está vacío</Text>
-              <Text style={styles.vacioTexto}>
-                Pídele a Mosaico que agregue algo aquí — «pon mis gastos del mes en mi inicio»
-                — y cuando lo proponga, lo aceptas y se queda fijo.
-              </Text>
-              <Boton
-                titulo="Hablar con Mosaico"
-                onPress={abrirChat}
-                style={styles.vacioBoton}
-              />
-            </View>
-          </Tarjeta>
-        ) : (
+        {/* KPI por defecto */}
+        <Tarjeta>
+          <View style={styles.kpiContainer}>
+            <Text style={styles.kpiEtiqueta}>Saldo disponible</Text>
+            <Text style={styles.kpiMonto}>$13,496.00</Text>
+            <Text style={styles.kpiCuenta}>Débito •• 2045</Text>
+          </View>
+        </Tarjeta>
+
+        {/* Preguntas frecuentes */}
+        <View style={styles.seccion}>
+          <Text style={styles.etiquetaSeccion}>Preguntas frecuentes</Text>
+          <View style={styles.chips}>
+            {SUGERENCIAS.map((s) => (
+              <Chip key={s} texto={s} onPress={() => preguntar(s)} />
+            ))}
+          </View>
+        </View>
+
+        {/* Bloques dinámicos anclados */}
+        {bloques.length > 0 && (
           <View style={styles.bloques}>
             {bloques.map((b) => (
               <View key={b.id}>
@@ -122,22 +126,12 @@ export default function Inicio() {
                   onPress={() => desanclar(b.id)}
                   style={({ pressed }) => [styles.quitar, pressed && styles.presionado]}
                 >
-                  <Ionicons name="close" size={13} color={colores.textoInverso} />
-                  <Text style={styles.quitarTexto}>Quitar de Inicio</Text>
+                  <Ionicons name="close" size={16} color={colores.textoApoyo} />
                 </Pressable>
               </View>
             ))}
           </View>
         )}
-
-        <View style={styles.seccion}>
-          <Text style={styles.etiquetaSeccion}>Prueba preguntando</Text>
-          <View style={styles.chips}>
-            {SUGERENCIAS.map((s) => (
-              <Chip key={s} texto={s} onPress={() => preguntar(s)} />
-            ))}
-          </View>
-        </View>
 
         <Text style={styles.nota}>
           Lo que fijas aquí vive en este dispositivo y se pierde al recargar: todavía no se
@@ -219,22 +213,22 @@ const styles = StyleSheet.create({
    * bloque sea.
    */
   quitar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-end',
-    gap: espacio.xs,
-    marginTop: espacio.sm,
+    position: 'absolute',
+    top: espacio.md,
+    right: espacio.md,
+    width: 28,
+    height: 28,
     borderRadius: radio.completo,
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
-    paddingHorizontal: espacio.md,
-    paddingVertical: espacio.xs,
+    backgroundColor: 'rgba(0, 0, 0, 0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
   },
-  quitarTexto: { fontSize: 11, fontWeight: '600', color: colores.textoInverso },
 
-  vacio: { alignItems: 'center', gap: espacio.sm, paddingVertical: espacio.sm },
-  vacioTitulo: { ...tipografia.cuerpo, fontWeight: '700', marginTop: espacio.xs },
-  vacioTexto: { ...tipografia.cuerpoSecundario, textAlign: 'center' },
-  vacioBoton: { marginTop: espacio.md, alignSelf: 'stretch' },
+  kpiContainer: { paddingVertical: espacio.sm },
+  kpiEtiqueta: { fontSize: 13, color: colores.textoApoyo, marginBottom: 2 },
+  kpiMonto: { fontSize: 32, fontWeight: '800', color: colores.texto, letterSpacing: -0.5 },
+  kpiCuenta: { fontSize: 13, fontWeight: '500', color: colores.textoSecundario, marginTop: espacio.xs },
 
   seccion: { gap: espacio.md },
   etiquetaSeccion: {
@@ -256,10 +250,12 @@ const styles = StyleSheet.create({
     borderRadius: radio.md,
     backgroundColor: colores.superficie,
     padding: espacio.lg,
-    shadowColor: '#000000',
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
+    // `boxShadow` en vez de los `shadow*` sueltos: react-native-web los
+    // marca como deprecados, y aqui SI hay reemplazo tipado en RN 0.86
+    // (a diferencia de textShadow, que todavia no lo tiene). `elevation`
+    // se queda para la arquitectura vieja de Android, donde boxShadow aun
+    // no aplica.
+    boxShadow: '0px 8px 16px rgba(0, 0, 0, 0.25)',
     elevation: 8,
   },
   panelTitulo: { ...tipografia.cuerpo, fontWeight: '700' },

@@ -41,6 +41,14 @@ const DURACION = 280;
  * cuando `useChatPanel().abierto` es true. La animación usa `Animated` nativo
  * para no depender de reanimated.
  */
+/**
+ * El driver nativo de animaciones no existe en web: ahi RN avisa que se
+ * cae a animacion por JS. Se activa solo en nativo, que es donde si
+ * aporta (saca la animacion del hilo de JS) -- en web el resultado visual
+ * es el mismo, nomas sin la advertencia en consola.
+ */
+const USAR_DRIVER_NATIVO = Platform.OS !== 'web';
+
 export function ChatFlotante() {
   const { abierto, cerrar } = useChatPanel();
   const { mensajes, cargando, enviar } = useAgent();
@@ -58,7 +66,7 @@ export function ChatFlotante() {
     Animated.timing(slideAnim, {
       toValue: abierto ? 1 : 0,
       duration: DURACION,
-      useNativeDriver: true,
+      useNativeDriver: USAR_DRIVER_NATIVO,
     }).start();
   }, [abierto]);
 
@@ -85,8 +93,13 @@ export function ChatFlotante() {
     <>
       {/* Overlay semitransparente — toque para cerrar */}
       <Animated.View
-        pointerEvents={abierto ? 'auto' : 'none'}
-        style={[styles.overlay, { opacity: overlayOpacity }]}
+        // `pointerEvents` va en el style, no como prop: react-native-web
+        // marca el prop como deprecado. Cerrado, el overlay no debe
+        // interceptar toques de la pantalla de atras.
+        style={[
+          styles.overlay,
+          { opacity: overlayOpacity, pointerEvents: abierto ? 'auto' : 'none' },
+        ]}
       >
         <Pressable
           accessibilityRole="button"
@@ -98,13 +111,13 @@ export function ChatFlotante() {
 
       {/* Panel de chat */}
       <Animated.View
-        pointerEvents={abierto ? 'auto' : 'none'}
         style={[
           styles.panel,
           {
             height: panelHeight,
             bottom: ALTO_TAB_BAR,
             transform: [{ translateY }],
+            pointerEvents: abierto ? 'auto' : 'none',
           },
         ]}
       >
@@ -238,10 +251,12 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radio.lg + 4,
     borderTopRightRadius: radio.lg + 4,
     // Sombra para despegar visualmente del contenido.
-    shadowColor: '#000000',
-    shadowOpacity: 0.2,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: -8 },
+    // `boxShadow` en vez de los `shadow*` sueltos: react-native-web los
+    // marca como deprecados, y aqui SI hay reemplazo tipado en RN 0.86
+    // (a diferencia de textShadow, que todavia no lo tiene). `elevation`
+    // se queda para la arquitectura vieja de Android, donde boxShadow aun
+    // no aplica.
+    boxShadow: '0px -8px 24px rgba(0, 0, 0, 0.2)',
     elevation: 16,
     overflow: 'hidden',
   },

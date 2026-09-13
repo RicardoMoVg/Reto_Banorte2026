@@ -312,10 +312,12 @@ const styles = StyleSheet.create({
     backgroundColor: colores.superficie,
     paddingVertical: espacio.xs,
     // Sombra para despegarlo del degradado (elevation cubre Android).
-    shadowColor: '#000000',
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
+    // `boxShadow` en vez de los `shadow*` sueltos: react-native-web los
+    // marca como deprecados, y aqui SI hay reemplazo tipado en RN 0.86
+    // (a diferencia de textShadow, que todavia no lo tiene). `elevation`
+    // se queda para la arquitectura vieja de Android, donde boxShadow aun
+    // no aplica.
+    boxShadow: '0px 8px 16px rgba(0, 0, 0, 0.25)',
     elevation: 8,
   },
   opcion: {
