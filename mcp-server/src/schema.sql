@@ -62,6 +62,20 @@ alter table metas add column if not exists estatus text not null default 'activa
 alter table metas drop constraint if exists metas_estatus_check;
 alter table metas add constraint metas_estatus_check check (estatus in ('activa', 'completada', 'archivada'));
 
+-- El COMPROMISO de aportar a una meta periódicamente (ej. "$634/mes por 6
+-- meses") -- distinto de `aportar_a_meta`, que registra una aportación YA
+-- hecha. Esta tabla es la "receta" del plan; cada aportación real seguirá
+-- pasando por `aportar_a_meta` (no hay job que la ejecute sola).
+create table if not exists aportaciones_programadas (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  meta_id text not null references metas(id),
+  monto numeric not null check (monto > 0),
+  periodicidad text not null check (periodicidad in ('semanal', 'quincenal', 'mensual')),
+  fecha_inicio date not null,
+  estatus text not null default 'activa' check (estatus in ('activa', 'completada', 'cancelada'))
+);
+
 create table if not exists transacciones (
   id text primary key,
   usuario_id text not null references usuarios(id),
@@ -264,6 +278,7 @@ alter table habitos_financieros add column if not exists activo boolean not null
 
 create index if not exists idx_cuentas_usuario on cuentas(usuario_id);
 create index if not exists idx_metas_usuario on metas(usuario_id);
+create index if not exists idx_aportaciones_programadas_usuario on aportaciones_programadas(usuario_id);
 create index if not exists idx_transacciones_usuario on transacciones(usuario_id, fecha desc);
 create index if not exists idx_transacciones_cuenta on transacciones(cuenta_id);
 create index if not exists idx_posiciones_usuario on posiciones_portafolio(usuario_id);
