@@ -16,10 +16,14 @@ memoria/entrenamiento, confirma contra la versión instalada (`57.0.0`, ver
 ## Qué es y qué NO es este paquete
 
 Es el único cliente de UI (Android, iOS, web vía `react-native-web`). No
-hace fetch a Postgres ni al MCP directamente — solo habla HTTP con
-`server/` (`POST /api/agent`, protocolo NDJSON, contrato en
-`constitution.md` 4.1). Ningún componente en `components/` importa nada de
-`server/` ni de `lib/mcp`.
+hace fetch a Postgres ni al MCP directamente — siempre habla HTTP con
+`server/`. Eso sí, no todo pasa por `POST /api/agent` (NDJSON, contrato en
+`constitution.md` 4.1): pantallas de banca tradicional (login, una
+transferencia por formulario normal, etc. — ver `constitution.md` 3.3)
+pueden llamar a otros endpoints REST normales de `server/`, sin pasar por
+el agente. Ningún componente en `components/` importa nada de `server/` ni
+de `lib/mcp` — eso aplica igual sin importar a qué endpoint le hable la
+pantalla.
 
 ## Dónde va cada cosa
 
