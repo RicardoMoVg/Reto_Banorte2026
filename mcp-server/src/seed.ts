@@ -23,9 +23,13 @@ async function main() {
 
   // --- Banca personal ---
   // cuentas va antes que transacciones: transacciones.cuenta_id la referencia.
+  // saldo de cuenta-1 = suma exacta de sus 3 transacciones de abajo
+  // (-85 + 15000 - 219 = 14696) -- consistente a propósito, no un número
+  // aparte inventado (antes decía 14915, copiado del mock viejo de solo
+  // 2 transacciones -- quedaba desincronizado con los datos reales del seed).
   await pool.query(
     `insert into cuentas (id, usuario_id, tipo, alias, saldo) values
-       ('cuenta-1', 'demo-user', 'debito', 'Cuenta principal', 14915),
+       ('cuenta-1', 'demo-user', 'debito', 'Cuenta principal', 14696),
        ('cuenta-2', 'demo-user', 'ahorro', 'Ahorro', 5000)
      on conflict (id) do nothing`,
   );
@@ -60,10 +64,13 @@ async function main() {
      on conflict (id) do nothing`,
   );
 
+  // cantidades pensadas para que el monto invertido sea coherente con el
+  // resto del perfil demo (saldo ~14,700, nómina 15,000/mes) -- no montos
+  // gigantes desproporcionados.
   await pool.query(
     `insert into posiciones_portafolio (id, usuario_id, instrumento_id, cantidad, precio_promedio) values
        ('pos-1', 'demo-user', 'inst-1', 100, 25.50),
-       ('pos-2', 'demo-user', 'inst-2', 5000, 10.00)
+       ('pos-2', 'demo-user', 'inst-2', 500, 10.00)
      on conflict (id) do nothing`,
   );
 
