@@ -58,6 +58,7 @@ create table if not exists metas (
 create table if not exists transacciones (
   id text primary key,
   usuario_id text not null references usuarios(id),
+  cuenta_id text references cuentas(id),
   descripcion text not null,
   monto numeric not null,
   categoria text,
@@ -78,7 +79,8 @@ create table if not exists instrumentos (
   id text primary key,
   nombre text not null,
   tipo text not null check (tipo in ('accion', 'fondo', 'cetes', 'etf')),
-  riesgo text not null check (riesgo in ('bajo', 'medio', 'alto'))
+  riesgo text not null check (riesgo in ('bajo', 'medio', 'alto')),
+  rendimiento_anual_estimado numeric not null -- % anual, para poder simular ("si invierto X...")
 );
 
 create table if not exists posiciones_portafolio (
@@ -136,6 +138,7 @@ create table if not exists transferencias (
   id text primary key,
   usuario_id text not null references usuarios(id),
   contacto_id text references contactos_pago(id),
+  tipo text not null default 'enviada' check (tipo in ('enviada', 'recibida')), -- 'recibida' = cobro
   monto numeric not null check (monto > 0),
   concepto text,
   estatus text not null default 'completada' check (estatus in ('pendiente', 'completada', 'fallida')),
@@ -152,7 +155,8 @@ create table if not exists polizas_seguro (
   tipo text not null check (tipo in ('auto', 'vida', 'gmm', 'hogar')),
   cobertura text not null,
   prima_mensual numeric not null check (prima_mensual > 0),
-  vigencia_fin date not null
+  vigencia_fin date not null,
+  estatus text not null default 'activa' check (estatus in ('cotizada', 'activa', 'vencida'))
 );
 
 create table if not exists siniestros (
@@ -190,6 +194,7 @@ create table if not exists habitos_financieros (
 create index if not exists idx_cuentas_usuario on cuentas(usuario_id);
 create index if not exists idx_metas_usuario on metas(usuario_id);
 create index if not exists idx_transacciones_usuario on transacciones(usuario_id, fecha desc);
+create index if not exists idx_transacciones_cuenta on transacciones(cuenta_id);
 create index if not exists idx_posiciones_usuario on posiciones_portafolio(usuario_id);
 create index if not exists idx_tarjetas_usuario on tarjetas_credito(usuario_id);
 create index if not exists idx_solicitudes_usuario on solicitudes_credito(usuario_id);

@@ -14,6 +14,22 @@ async function main() {
      on conflict (id) do nothing`,
   );
 
+  // --- Dashboard anclado (receta, no el valor resuelto -- ver constitution.md 3.2) ---
+  await pool.query(
+    `insert into dashboard_widgets (id, usuario_id, componente, tool, parametros, mensaje_agente, orden) values
+       ('widget-1', 'demo-user', 'RastreadorMetas', 'mostrarProgresoMeta', '{"metaId":"meta-1"}'::jsonb, '¡Vas por muy buen camino!', 1)
+     on conflict (id) do nothing`,
+  );
+
+  // --- Banca personal ---
+  // cuentas va antes que transacciones: transacciones.cuenta_id la referencia.
+  await pool.query(
+    `insert into cuentas (id, usuario_id, tipo, alias, saldo) values
+       ('cuenta-1', 'demo-user', 'debito', 'Cuenta principal', 14915),
+       ('cuenta-2', 'demo-user', 'ahorro', 'Ahorro', 5000)
+     on conflict (id) do nothing`,
+  );
+
   await pool.query(
     `insert into metas (id, usuario_id, titulo, monto_actual, monto_objetivo) values
        ('meta-1', 'demo-user', 'Fondo de emergencia', 6200, 10000),
@@ -22,25 +38,10 @@ async function main() {
   );
 
   await pool.query(
-    `insert into transacciones (id, usuario_id, descripcion, monto, categoria, fecha) values
-       ('tx-1', 'demo-user', 'Café Starbucks', -85, 'comida', now() - interval '1 day'),
-       ('tx-2', 'demo-user', 'Depósito nómina', 15000, 'ingreso', now() - interval '3 day'),
-       ('tx-3', 'demo-user', 'Netflix', -219, 'suscripciones', now() - interval '5 day')
-     on conflict (id) do nothing`,
-  );
-
-  // --- Dashboard anclado (receta, no el valor resuelto -- ver constitution.md 3.2) ---
-  await pool.query(
-    `insert into dashboard_widgets (id, usuario_id, componente, tool, parametros, mensaje_agente, orden) values
-       ('widget-1', 'demo-user', 'RastreadorMetas', 'mostrarProgresoMeta', '{"metaId":"meta-1"}'::jsonb, '¡Vas por muy buen camino!', 1)
-     on conflict (id) do nothing`,
-  );
-
-  // --- Banca personal (extra) ---
-  await pool.query(
-    `insert into cuentas (id, usuario_id, tipo, alias, saldo) values
-       ('cuenta-1', 'demo-user', 'debito', 'Cuenta principal', 14915),
-       ('cuenta-2', 'demo-user', 'ahorro', 'Ahorro', 5000)
+    `insert into transacciones (id, usuario_id, cuenta_id, descripcion, monto, categoria, fecha) values
+       ('tx-1', 'demo-user', 'cuenta-1', 'Café Starbucks', -85, 'comida', now() - interval '1 day'),
+       ('tx-2', 'demo-user', 'cuenta-1', 'Depósito nómina', 15000, 'ingreso', now() - interval '3 day'),
+       ('tx-3', 'demo-user', 'cuenta-1', 'Netflix', -219, 'suscripciones', now() - interval '5 day')
      on conflict (id) do nothing`,
   );
 
@@ -52,10 +53,10 @@ async function main() {
   );
 
   await pool.query(
-    `insert into instrumentos (id, nombre, tipo, riesgo) values
-       ('inst-1', 'Fondo Banorte Renta Variable', 'fondo', 'alto'),
-       ('inst-2', 'CETES 28 días', 'cetes', 'bajo'),
-       ('inst-3', 'ETF S&P 500', 'etf', 'medio')
+    `insert into instrumentos (id, nombre, tipo, riesgo, rendimiento_anual_estimado) values
+       ('inst-1', 'Fondo Banorte Renta Variable', 'fondo', 'alto', 11.5),
+       ('inst-2', 'CETES 28 días', 'cetes', 'bajo', 10.8),
+       ('inst-3', 'ETF S&P 500', 'etf', 'medio', 9.2)
      on conflict (id) do nothing`,
   );
 
@@ -95,15 +96,17 @@ async function main() {
   );
 
   await pool.query(
-    `insert into transferencias (id, usuario_id, contacto_id, monto, concepto, estatus, fecha) values
-       ('transferencia-1', 'demo-user', 'contacto-1', 500, 'Renta', 'completada', now() - interval '2 day')
+    `insert into transferencias (id, usuario_id, contacto_id, tipo, monto, concepto, estatus, fecha) values
+       ('transferencia-1', 'demo-user', 'contacto-1', 'enviada', 500, 'Renta', 'completada', now() - interval '2 day'),
+       ('transferencia-2', 'demo-user', 'contacto-1', 'recibida', 300, 'Pago compartido', 'completada', now() - interval '1 day')
      on conflict (id) do nothing`,
   );
 
   // --- Seguros ---
   await pool.query(
-    `insert into polizas_seguro (id, usuario_id, tipo, cobertura, prima_mensual, vigencia_fin) values
-       ('poliza-1', 'demo-user', 'auto', 'Cobertura amplia', 850, '2027-06-30')
+    `insert into polizas_seguro (id, usuario_id, tipo, cobertura, prima_mensual, vigencia_fin, estatus) values
+       ('poliza-1', 'demo-user', 'auto', 'Cobertura amplia', 850, '2027-06-30', 'activa'),
+       ('poliza-2', 'demo-user', 'vida', 'Cobertura básica', 400, '2027-01-15', 'cotizada')
      on conflict (id) do nothing`,
   );
 
