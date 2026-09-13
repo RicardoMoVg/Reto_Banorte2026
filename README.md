@@ -232,6 +232,40 @@ prerrenderiza ni llama a Postgres/el LLM durante `next build` (todas son
 `export const runtime = 'nodejs'`, dinámicas) — Railway las inyecta en
 runtime y basta.
 
+### `client/` en el navegador (web)
+
+`client/Dockerfile` exporta la versión web (`expo export --platform web`,
+react-native-web) como estático y lo sirve con `serve -s` (fallback SPA:
+cualquier ruta que no sea un archivo real cae a `index.html`, y
+`expo-router` resuelve del lado del cliente).
+
+Es un servicio Railway APARTE del backend, con su propio `Dockerfile` en
+`client/` (root directory de ese servicio: `client`, no la raíz del repo).
+
+**Ojo, a diferencia de `server/`: aquí `EXPO_PUBLIC_API_URL` SÍ hace falta
+en build time** — Expo la hornea dentro del bundle JS al momento de
+exportar, no se lee después en runtime. Configúrala en Railway ANTES del
+primer deploy, apuntando a la URL pública del backend (`https://<tu-backend>.up.railway.app`).
+Si el backend cambia de URL, hay que volver a desplegar el cliente (no
+basta con cambiar la variable).
+
+CORS: `server/lib/http/cors.ts` ya permite `Access-Control-Allow-Origin: *`,
+así que cualquier origen (incluido un dominio propio para el cliente) puede
+llamar al backend sin configuración extra. Si agregas un método HTTP nuevo
+a algún endpoint (además de GET/POST/PUT), agrégalo también en
+`Access-Control-Allow-Methods` -- si no, el navegador bloquea la petición en
+el preflight antes de que llegue a la ruta, y **curl no lo detecta** porque
+CORS solo lo aplica el navegador (así se nos fue el PUT de editar perfil la
+primera vez).
+
+**Dominio propio:** en el servicio del cliente, Settings → Networking →
+Custom Domain, agrega el dominio. Railway te da un CNAME (y un TXT de
+verificación) para poner en tu proveedor de DNS. Si tu proveedor no permite
+CNAME en la raíz del dominio (`@`) -- ninguno lo permite en realidad, es una
+regla de DNS, no un límite de Railway -- usa un subdominio (`www.tudominio.com`)
+y, si quieres que la raíz también funcione, configura ahí un "Domain
+Forwarding"/redirect hacia el subdominio en vez de un CNAME.
+
 ## Siguiente bloque A2UI
 
 1. Backend: Zod schema en `lib/ai/a2ui-schemas.ts` + tool en
