@@ -177,3 +177,366 @@ export async function getSaldoUsuario(userId: string): Promise<number> {
   });
   return Number(saldo);
 }
+
+// ============================================================
+// Banca personal (extra)
+// ============================================================
+
+export interface Cuenta {
+  id: string;
+  tipo: string;
+  alias: string;
+  saldo: number;
+}
+
+const CUENTAS_MOCK: Cuenta[] = [
+  { id: 'cuenta-1', tipo: 'debito', alias: 'Cuenta principal', saldo: 14696 },
+  { id: 'cuenta-2', tipo: 'ahorro', alias: 'Ahorro', saldo: 5000 },
+];
+
+export async function getCuentasUsuario(userId: string): Promise<Cuenta[]> {
+  if (USE_MOCK) return CUENTAS_MOCK;
+
+  const rows = await llamarTool<
+    Array<{ id: string; tipo: string; alias: string; saldo: string | number }>
+  >('get_cuentas', { userId });
+
+  return rows.map((c) => ({ id: c.id, tipo: c.tipo, alias: c.alias, saldo: Number(c.saldo) }));
+}
+
+// ============================================================
+// Inversiones
+// ============================================================
+
+export interface PerfilInversion {
+  toleranciaRiesgo: string;
+  horizonteAnios: number;
+}
+
+const PERFIL_INVERSION_MOCK: PerfilInversion = { toleranciaRiesgo: 'moderado', horizonteAnios: 5 };
+
+export async function getPerfilInversion(userId: string): Promise<PerfilInversion | null> {
+  if (USE_MOCK) return PERFIL_INVERSION_MOCK;
+
+  const row = await llamarTool<{ tolerancia_riesgo: string; horizonte_anios: number } | null>(
+    'get_perfil_inversion',
+    { userId },
+  );
+  if (!row) return null;
+
+  return { toleranciaRiesgo: row.tolerancia_riesgo, horizonteAnios: row.horizonte_anios };
+}
+
+export interface PosicionPortafolio {
+  id: string;
+  nombre: string;
+  tipo: string;
+  riesgo: string;
+  rendimientoAnualEstimado: number;
+  cantidad: number;
+  precioPromedio: number;
+  valorInvertido: number;
+}
+
+const PORTAFOLIO_MOCK: PosicionPortafolio[] = [
+  { id: 'pos-1', nombre: 'Fondo Banorte Renta Variable', tipo: 'fondo', riesgo: 'alto', rendimientoAnualEstimado: 11.5, cantidad: 100, precioPromedio: 25.5, valorInvertido: 2550 },
+  { id: 'pos-2', nombre: 'CETES 28 días', tipo: 'cetes', riesgo: 'bajo', rendimientoAnualEstimado: 10.8, cantidad: 500, precioPromedio: 10, valorInvertido: 5000 },
+];
+
+export async function getPortafolioUsuario(userId: string): Promise<PosicionPortafolio[]> {
+  if (USE_MOCK) return PORTAFOLIO_MOCK;
+
+  const rows = await llamarTool<
+    Array<{
+      id: string;
+      nombre: string;
+      tipo: string;
+      riesgo: string;
+      rendimiento_anual_estimado: string | number;
+      cantidad: string | number;
+      precio_promedio: string | number;
+      valor_invertido: string | number;
+    }>
+  >('get_portafolio', { userId });
+
+  return rows.map((p) => ({
+    id: p.id,
+    nombre: p.nombre,
+    tipo: p.tipo,
+    riesgo: p.riesgo,
+    rendimientoAnualEstimado: Number(p.rendimiento_anual_estimado),
+    cantidad: Number(p.cantidad),
+    precioPromedio: Number(p.precio_promedio),
+    valorInvertido: Number(p.valor_invertido),
+  }));
+}
+
+// ============================================================
+// Crédito
+// ============================================================
+
+export interface TarjetaCredito {
+  id: string;
+  alias: string;
+  limiteCredito: number;
+  saldoActual: number;
+  tasaAnual: number;
+}
+
+const TARJETAS_CREDITO_MOCK: TarjetaCredito[] = [
+  { id: 'tarjeta-1', alias: 'Tarjeta Oro', limiteCredito: 20000, saldoActual: 18400, tasaAnual: 32.4 },
+];
+
+export async function getTarjetasCredito(userId: string): Promise<TarjetaCredito[]> {
+  if (USE_MOCK) return TARJETAS_CREDITO_MOCK;
+
+  const rows = await llamarTool<
+    Array<{ id: string; alias: string; limite_credito: string | number; saldo_actual: string | number; tasa_anual: string | number }>
+  >('get_tarjetas_credito', { userId });
+
+  return rows.map((t) => ({
+    id: t.id,
+    alias: t.alias,
+    limiteCredito: Number(t.limite_credito),
+    saldoActual: Number(t.saldo_actual),
+    tasaAnual: Number(t.tasa_anual),
+  }));
+}
+
+export interface PlanPago {
+  id: string;
+  plazoMeses: number;
+  cat: number;
+  pagoMensual: number;
+}
+
+const PLANES_PAGO_MOCK: PlanPago[] = [
+  { id: 'plan-1', plazoMeses: 12, cat: 32.4, pagoMensual: 1690 },
+  { id: 'plan-2', plazoMeses: 18, cat: 34.1, pagoMensual: 1215 },
+  { id: 'plan-3', plazoMeses: 24, cat: 36.0, pagoMensual: 980 },
+];
+
+export async function getPlanesPago(tarjetaId: string): Promise<PlanPago[]> {
+  if (USE_MOCK) return PLANES_PAGO_MOCK;
+
+  const rows = await llamarTool<
+    Array<{ id: string; plazo_meses: number; cat: string | number; pago_mensual: string | number }>
+  >('get_planes_pago', { tarjetaId });
+
+  return rows.map((p) => ({
+    id: p.id,
+    plazoMeses: p.plazo_meses,
+    cat: Number(p.cat),
+    pagoMensual: Number(p.pago_mensual),
+  }));
+}
+
+export interface SolicitudCredito {
+  id: string;
+  tipo: string;
+  montoSolicitado: number;
+  estatus: string;
+  fecha: string;
+}
+
+const SOLICITUDES_CREDITO_MOCK: SolicitudCredito[] = [
+  { id: 'sol-1', tipo: 'personal', montoSolicitado: 15000, estatus: 'pendiente', fecha: new Date().toISOString() },
+];
+
+export async function getSolicitudesCredito(userId: string): Promise<SolicitudCredito[]> {
+  if (USE_MOCK) return SOLICITUDES_CREDITO_MOCK;
+
+  const rows = await llamarTool<
+    Array<{ id: string; tipo: string; monto_solicitado: string | number; estatus: string; fecha: string }>
+  >('get_solicitudes_credito', { userId });
+
+  return rows.map((s) => ({
+    id: s.id,
+    tipo: s.tipo,
+    montoSolicitado: Number(s.monto_solicitado),
+    estatus: s.estatus,
+    fecha: s.fecha,
+  }));
+}
+
+// ============================================================
+// Pagos
+// ============================================================
+
+export interface ContactoPago {
+  id: string;
+  nombre: string;
+  clabe: string | null;
+}
+
+const CONTACTOS_PAGO_MOCK: ContactoPago[] = [
+  { id: 'contacto-1', nombre: 'María López', clabe: '012180012345678901' },
+];
+
+export async function getContactosPago(userId: string): Promise<ContactoPago[]> {
+  if (USE_MOCK) return CONTACTOS_PAGO_MOCK;
+
+  const rows = await llamarTool<Array<{ id: string; nombre: string; clabe: string | null }>>(
+    'get_contactos_pago',
+    { userId },
+  );
+
+  return rows.map((c) => ({ id: c.id, nombre: c.nombre, clabe: c.clabe }));
+}
+
+export interface Transferencia {
+  id: string;
+  tipo: string;
+  monto: number;
+  concepto: string | null;
+  estatus: string;
+  fecha: string;
+  contacto: string | null;
+}
+
+const TRANSFERENCIAS_MOCK: Transferencia[] = [
+  { id: 'transferencia-1', tipo: 'enviada', monto: 500, concepto: 'Renta', estatus: 'completada', fecha: new Date().toISOString(), contacto: 'María López' },
+  { id: 'transferencia-2', tipo: 'recibida', monto: 300, concepto: 'Pago compartido', estatus: 'completada', fecha: new Date().toISOString(), contacto: 'María López' },
+];
+
+export async function getTransferenciasRecientes(
+  userId: string,
+  limite = 10,
+): Promise<Transferencia[]> {
+  if (USE_MOCK) return TRANSFERENCIAS_MOCK.slice(0, limite);
+
+  const rows = await llamarTool<
+    Array<{
+      id: string;
+      tipo: string;
+      monto: string | number;
+      concepto: string | null;
+      estatus: string;
+      fecha: string;
+      contacto: string | null;
+    }>
+  >('get_transferencias', { userId, limite });
+
+  return rows.map((t) => ({
+    id: t.id,
+    tipo: t.tipo,
+    monto: Number(t.monto),
+    concepto: t.concepto,
+    estatus: t.estatus,
+    fecha: t.fecha,
+    contacto: t.contacto,
+  }));
+}
+
+// ============================================================
+// Seguros
+// ============================================================
+
+export interface PolizaSeguro {
+  id: string;
+  tipo: string;
+  cobertura: string;
+  primaMensual: number;
+  vigenciaFin: string;
+  estatus: string;
+}
+
+const POLIZAS_SEGURO_MOCK: PolizaSeguro[] = [
+  { id: 'poliza-1', tipo: 'auto', cobertura: 'Cobertura amplia', primaMensual: 850, vigenciaFin: '2027-06-30', estatus: 'activa' },
+  { id: 'poliza-2', tipo: 'vida', cobertura: 'Cobertura básica', primaMensual: 400, vigenciaFin: '2027-01-15', estatus: 'cotizada' },
+];
+
+export async function getPolizasSeguro(userId: string): Promise<PolizaSeguro[]> {
+  if (USE_MOCK) return POLIZAS_SEGURO_MOCK;
+
+  const rows = await llamarTool<
+    Array<{ id: string; tipo: string; cobertura: string; prima_mensual: string | number; vigencia_fin: string; estatus: string }>
+  >('get_polizas_seguro', { userId });
+
+  return rows.map((p) => ({
+    id: p.id,
+    tipo: p.tipo,
+    cobertura: p.cobertura,
+    primaMensual: Number(p.prima_mensual),
+    vigenciaFin: p.vigencia_fin,
+    estatus: p.estatus,
+  }));
+}
+
+export interface Siniestro {
+  id: string;
+  descripcion: string;
+  montoReclamado: number | null;
+  estatus: string;
+  fecha: string;
+  tipoPoliza: string;
+}
+
+const SINIESTROS_MOCK: Siniestro[] = [
+  { id: 'siniestro-1', descripcion: 'Choque leve en estacionamiento', montoReclamado: 12000, estatus: 'en_revision', fecha: new Date().toISOString(), tipoPoliza: 'auto' },
+];
+
+export async function getSiniestrosUsuario(userId: string): Promise<Siniestro[]> {
+  if (USE_MOCK) return SINIESTROS_MOCK;
+
+  const rows = await llamarTool<
+    Array<{
+      id: string;
+      descripcion: string;
+      monto_reclamado: string | number | null;
+      estatus: string;
+      fecha: string;
+      tipo_poliza: string;
+    }>
+  >('get_siniestros', { userId });
+
+  return rows.map((s) => ({
+    id: s.id,
+    descripcion: s.descripcion,
+    montoReclamado: s.monto_reclamado == null ? null : Number(s.monto_reclamado),
+    estatus: s.estatus,
+    fecha: s.fecha,
+    tipoPoliza: s.tipo_poliza,
+  }));
+}
+
+// ============================================================
+// Educación financiera
+// ============================================================
+
+export interface DiagnosticoFinanciero {
+  puntaje: number;
+  fecha: string;
+}
+
+const DIAGNOSTICO_MOCK: DiagnosticoFinanciero = { puntaje: 72, fecha: new Date().toISOString() };
+
+export async function getDiagnosticoFinanciero(
+  userId: string,
+): Promise<DiagnosticoFinanciero | null> {
+  if (USE_MOCK) return DIAGNOSTICO_MOCK;
+
+  return llamarTool<DiagnosticoFinanciero | null>('get_diagnostico_financiero', { userId });
+}
+
+export interface HabitoFinanciero {
+  id: string;
+  habito: string;
+  rachaDias: number;
+}
+
+const HABITOS_MOCK: HabitoFinanciero[] = [
+  { id: 'habito-1', habito: 'Ahorro automático semanal', rachaDias: 6 },
+  { id: 'habito-2', habito: 'Revisar gastos cada domingo', rachaDias: 3 },
+];
+
+export async function getHabitosFinancieros(userId: string): Promise<HabitoFinanciero[]> {
+  if (USE_MOCK) return HABITOS_MOCK;
+
+  const rows = await llamarTool<Array<{ id: string; habito: string; racha_dias: number }>>(
+    'get_habitos_financieros',
+    { userId },
+  );
+
+  return rows.map((h) => ({ id: h.id, habito: h.habito, rachaDias: h.racha_dias }));
+}
