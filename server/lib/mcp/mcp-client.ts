@@ -71,12 +71,23 @@ let toolsPromise: Promise<MCPTools> | null = null;
  */
 function getTools(): Promise<MCPTools> {
   if (!toolsPromise) {
+    // process.cwd() es server/ (donde corre `npm run dev`); mcp-server/ es
+    // hermano de server/ en la raíz del repo, un nivel arriba.
+    const mcpServerDir = path.join(process.cwd(), '..', 'mcp-server');
+
     toolsPromise = createMCPClient({
       transport: new StdioMCPTransport({
-        command: 'npx',
-        // process.cwd() es server/ (donde corre `npm run dev`); mcp-server/
-        // es hermano de server/ en la raíz del repo, un nivel arriba.
-        args: ['tsx', path.join(process.cwd(), '..', 'mcp-server/src/server.ts')],
+        // NO usar command: 'npx' -- en Windows resuelve a npx.cmd, y
+        // child_process.spawn (sin shell: true, que StdioConfig no expone)
+        // no puede ejecutar un .cmd directo: truena con `spawn npx ENOENT`
+        // (confirmado en vivo). En su lugar, se invoca node.exe directo
+        // sobre el archivo real de tsx -- un .mjs normal, sin shell de por
+        // medio, funciona igual en Windows/Mac/Linux.
+        command: process.execPath,
+        args: [
+          path.join(mcpServerDir, 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+          path.join(mcpServerDir, 'src', 'server.ts'),
+        ],
         env: {
           ...process.env,
           DATABASE_URL: process.env.DATABASE_URL ?? '',
