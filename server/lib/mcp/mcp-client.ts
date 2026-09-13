@@ -52,7 +52,8 @@ const METAS_MOCK: Meta[] = [
 
 const TRANSACCIONES_MOCK: Transaccion[] = [
   { id: 'tx-1', descripcion: 'Café Starbucks', monto: -85, fecha: new Date().toISOString(), categoria: 'comida' },
-  { id: 'tx-2', descripcion: 'Depósito nómina', monto: 15000, fecha: new Date().toISOString(), categoria: 'ingreso' },
+  { id: 'tx-2', descripcion: 'Billar', monto: -200, fecha: new Date().toISOString(), categoria: 'diversion' },
+  { id: 'tx-3', descripcion: 'Depósito nómina', monto: 15000, fecha: new Date().toISOString(), categoria: 'ingreso' },
 ];
 
 type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
@@ -258,6 +259,134 @@ export async function archivarMeta(userId: string, metaId: string): Promise<Meta
   };
 }
 
+export interface AportacionProgramada {
+  id: string;
+  metaId: string;
+  monto: number;
+  periodicidad: 'semanal' | 'quincenal' | 'mensual';
+  fechaInicio: string;
+  estatus: 'activa' | 'completada' | 'cancelada';
+}
+
+const APORTACIONES_PROGRAMADAS_MOCK: AportacionProgramada[] = [];
+
+export async function crearAportacionProgramada(
+  userId: string,
+  metaId: string,
+  monto: number,
+  periodicidad: 'semanal' | 'quincenal' | 'mensual',
+  fechaInicio: string,
+): Promise<AportacionProgramada | { error: string }> {
+  if (USE_MOCK) {
+    const meta = METAS_MOCK.find((m) => m.id === metaId && m.estatus === 'activa');
+    if (!meta) return { error: 'Meta no encontrada, no pertenece al usuario, o no está activa.' };
+
+    const aportacion: AportacionProgramada = {
+      id: `aportacion-mock-${APORTACIONES_PROGRAMADAS_MOCK.length + 1}`,
+      metaId,
+      monto,
+      periodicidad,
+      fechaInicio,
+      estatus: 'activa',
+    };
+    APORTACIONES_PROGRAMADAS_MOCK.push(aportacion);
+    return aportacion;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | {
+        id: string;
+        meta_id: string;
+        monto: string | number;
+        periodicidad: AportacionProgramada['periodicidad'];
+        fecha_inicio: string;
+        estatus: AportacionProgramada['estatus'];
+      }
+  >('crear_aportacion_programada', { userId, metaId, monto, periodicidad, fechaInicio });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    metaId: resultado.meta_id,
+    monto: Number(resultado.monto),
+    periodicidad: resultado.periodicidad,
+    fechaInicio: resultado.fecha_inicio,
+    estatus: resultado.estatus,
+  };
+}
+
+export async function getAportacionesProgramadas(
+  userId: string,
+  opciones: { metaId?: string; incluirCanceladas?: boolean } = {},
+): Promise<AportacionProgramada[]> {
+  const { metaId, incluirCanceladas = false } = opciones;
+
+  if (USE_MOCK) {
+    let resultado = incluirCanceladas
+      ? APORTACIONES_PROGRAMADAS_MOCK
+      : APORTACIONES_PROGRAMADAS_MOCK.filter((a) => a.estatus !== 'cancelada');
+    if (metaId) resultado = resultado.filter((a) => a.metaId === metaId);
+    return resultado;
+  }
+
+  const rows = await llamarTool<
+    Array<{
+      id: string;
+      meta_id: string;
+      monto: string | number;
+      periodicidad: AportacionProgramada['periodicidad'];
+      fecha_inicio: string;
+      estatus: AportacionProgramada['estatus'];
+    }>
+  >('get_aportaciones_programadas', { userId, metaId, incluirCanceladas });
+
+  return rows.map((a) => ({
+    id: a.id,
+    metaId: a.meta_id,
+    monto: Number(a.monto),
+    periodicidad: a.periodicidad,
+    fechaInicio: a.fecha_inicio,
+    estatus: a.estatus,
+  }));
+}
+
+export async function cancelarAportacionProgramada(
+  userId: string,
+  aportacionId: string,
+): Promise<AportacionProgramada | { error: string }> {
+  if (USE_MOCK) {
+    const aportacion = APORTACIONES_PROGRAMADAS_MOCK.find((a) => a.id === aportacionId && a.estatus === 'activa');
+    if (!aportacion) return { error: 'Plan no encontrado o ya no está activo.' };
+    aportacion.estatus = 'cancelada';
+    return aportacion;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | {
+        id: string;
+        meta_id: string;
+        monto: string | number;
+        periodicidad: AportacionProgramada['periodicidad'];
+        fecha_inicio: string;
+        estatus: AportacionProgramada['estatus'];
+      }
+  >('cancelar_aportacion_programada', { userId, aportacionId });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    metaId: resultado.meta_id,
+    monto: Number(resultado.monto),
+    periodicidad: resultado.periodicidad,
+    fechaInicio: resultado.fecha_inicio,
+    estatus: resultado.estatus,
+  };
+}
+
 export interface FiltroTransacciones {
   limite?: number;
   categoria?: string;
@@ -386,6 +515,8 @@ const INSTRUMENTOS_MOCK: Instrumento[] = [
   { id: 'inst-1', nombre: 'Fondo Banorte Renta Variable', tipo: 'fondo', riesgo: 'alto', rendimientoAnualEstimado: 11.5 },
   { id: 'inst-2', nombre: 'CETES 28 días', tipo: 'cetes', riesgo: 'bajo', rendimientoAnualEstimado: 10.8 },
   { id: 'inst-3', nombre: 'ETF S&P 500', tipo: 'etf', riesgo: 'medio', rendimientoAnualEstimado: 9.2 },
+  { id: 'inst-4', nombre: 'Dólar estadounidense (USD)', tipo: 'divisa', riesgo: 'medio', rendimientoAnualEstimado: 4.5 },
+  { id: 'inst-5', nombre: 'Euro (EUR)', tipo: 'divisa', riesgo: 'medio', rendimientoAnualEstimado: 3.8 },
 ];
 
 export async function getInstrumentos(
@@ -723,6 +854,110 @@ export async function getTarjetasCredito(userId: string): Promise<TarjetaCredito
     saldoActual: Number(t.saldo_actual),
     tasaAnual: Number(t.tasa_anual),
   }));
+}
+
+export interface CompraTarjeta {
+  id: string;
+  tarjetaId: string;
+  descripcion: string;
+  monto: number;
+  fecha: string;
+  mesesMsi: number | null;
+}
+
+const COMPRAS_TARJETA_MOCK: CompraTarjeta[] = [
+  { id: 'compra-1', tarjetaId: 'tarjeta-1', descripcion: 'Pantalla LED 55"', monto: 12000, fecha: new Date().toISOString(), mesesMsi: 12 },
+  { id: 'compra-2', tarjetaId: 'tarjeta-1', descripcion: 'Supermercado', monto: 6400, fecha: new Date().toISOString(), mesesMsi: null },
+];
+
+export async function crearCompraTarjeta(
+  userId: string,
+  tarjetaId: string,
+  descripcion: string,
+  monto: number,
+): Promise<CompraTarjeta | { error: string }> {
+  if (USE_MOCK) {
+    const existeTarjeta = TARJETAS_CREDITO_MOCK.some((t) => t.id === tarjetaId);
+    if (!existeTarjeta) return { error: 'Tarjeta no encontrada o no pertenece al usuario.' };
+
+    const compra: CompraTarjeta = {
+      id: `compra-mock-${COMPRAS_TARJETA_MOCK.length + 1}`,
+      tarjetaId,
+      descripcion,
+      monto,
+      fecha: new Date().toISOString(),
+      mesesMsi: null,
+    };
+    COMPRAS_TARJETA_MOCK.push(compra);
+    return compra;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; descripcion: string; monto: string | number; fecha: string; meses_msi: number | null }
+  >('crear_compra_tarjeta', { userId, tarjetaId, descripcion, monto });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    tarjetaId,
+    descripcion: resultado.descripcion,
+    monto: Number(resultado.monto),
+    fecha: resultado.fecha,
+    mesesMsi: resultado.meses_msi,
+  };
+}
+
+export async function getComprasTarjeta(
+  userId: string,
+  tarjetaId?: string,
+): Promise<CompraTarjeta[]> {
+  if (USE_MOCK) {
+    return tarjetaId ? COMPRAS_TARJETA_MOCK.filter((c) => c.tarjetaId === tarjetaId) : COMPRAS_TARJETA_MOCK;
+  }
+
+  const rows = await llamarTool<
+    Array<{ id: string; tarjeta_id: string; descripcion: string; monto: string | number; fecha: string; meses_msi: number | null }>
+  >('get_compras_tarjeta', { userId, tarjetaId });
+
+  return rows.map((c) => ({
+    id: c.id,
+    tarjetaId: c.tarjeta_id,
+    descripcion: c.descripcion,
+    monto: Number(c.monto),
+    fecha: c.fecha,
+    mesesMsi: c.meses_msi,
+  }));
+}
+
+export async function diferirAMsi(
+  userId: string,
+  compraId: string,
+  mesesMsi: number,
+): Promise<CompraTarjeta | { error: string }> {
+  if (USE_MOCK) {
+    const compra = COMPRAS_TARJETA_MOCK.find((c) => c.id === compraId && c.mesesMsi == null);
+    if (!compra) return { error: 'Compra no encontrada, no pertenece al usuario, o ya está diferida.' };
+    compra.mesesMsi = mesesMsi;
+    return compra;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; tarjeta_id: string; descripcion: string; monto: string | number; fecha: string; meses_msi: number | null }
+  >('diferir_a_msi', { userId, compraId, mesesMsi });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    tarjetaId: resultado.tarjeta_id,
+    descripcion: resultado.descripcion,
+    monto: Number(resultado.monto),
+    fecha: resultado.fecha,
+    mesesMsi: resultado.meses_msi,
+  };
 }
 
 export interface PlanPago {

@@ -118,6 +118,99 @@ server.tool(
 );
 
 server.tool(
+  'crear_aportacion_programada',
+  'Crea un plan de aportación periódica hacia una meta activa del usuario (ej. "$634/mes por 6 meses"). No ejecuta las aportaciones -- eso lo sigue haciendo aportar_a_meta, esto solo guarda el compromiso.',
+  {
+    userId: z.string().describe('Id del usuario (debe ser dueño de la meta)'),
+    metaId: z.string().describe('Id de la meta (debe estar activa)'),
+    monto: z.number().positive().describe('Monto de cada aportación'),
+    periodicidad: z.enum(['semanal', 'quincenal', 'mensual']),
+    fechaInicio: z.string().describe('Fecha de la primera aportación (ISO 8601, ej. "2026-10-01")'),
+  },
+  async ({ userId, metaId, monto, periodicidad, fechaInicio }) => {
+    const meta = await pool.query(
+      `select id from metas where id = $1 and usuario_id = $2 and estatus = 'activa'`,
+      [metaId, userId],
+    );
+
+    if (meta.rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Meta no encontrada, no pertenece al usuario, o no está activa.' }) }],
+      };
+    }
+
+    const { rows } = await pool.query(
+      `insert into aportaciones_programadas (id, usuario_id, meta_id, monto, periodicidad, fecha_inicio)
+       values ('aportacion-' || gen_random_uuid(), $1, $2, $3, $4, $5)
+       returning id, meta_id, monto, periodicidad, fecha_inicio, estatus`,
+      [userId, metaId, monto, periodicidad, fechaInicio],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'get_aportaciones_programadas',
+  'Obtiene los planes de aportación programada del usuario, opcionalmente filtrados por meta. Por defecto no incluye las canceladas.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    metaId: z.string().optional().describe('Filtra solo los planes de esta meta'),
+    incluirCanceladas: z.boolean().default(false).describe('Si es true, incluye también las canceladas'),
+  },
+  async ({ userId, metaId, incluirCanceladas }) => {
+    const condiciones = ['usuario_id = $1', "(estatus <> 'cancelada' or $2)"];
+    const valores: unknown[] = [userId, incluirCanceladas];
+
+    if (metaId) {
+      valores.push(metaId);
+      condiciones.push(`meta_id = $${valores.length}`);
+    }
+
+    const { rows } = await pool.query(
+      `select id, meta_id, monto, periodicidad, fecha_inicio, estatus
+       from aportaciones_programadas
+       where ${condiciones.join(' and ')}
+       order by fecha_inicio desc`,
+      valores,
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
+  'cancelar_aportacion_programada',
+  'Cancela un plan de aportación programada que sigue activo (borrado lógico).',
+  {
+    userId: z.string().describe('Id del usuario (debe ser dueño del plan)'),
+    aportacionId: z.string().describe('Id del plan de aportación'),
+  },
+  async ({ userId, aportacionId }) => {
+    const { rows } = await pool.query(
+      `update aportaciones_programadas set estatus = 'cancelada'
+       where id = $1 and usuario_id = $2 and estatus = 'activa'
+       returning id, meta_id, monto, periodicidad, fecha_inicio, estatus`,
+      [aportacionId, userId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Plan no encontrado, no pertenece al usuario, o ya no está activo.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
   'get_transacciones',
   'Obtiene las transacciones del usuario, opcionalmente filtradas por categoría y/o rango de fechas.',
   {
@@ -244,7 +337,7 @@ server.tool(
   'get_instrumentos',
   'Obtiene el catálogo de instrumentos de inversión disponibles (no solo los que ya tiene el usuario) -- para simular "si invierto en X".',
   {
-    tipo: z.enum(['accion', 'fondo', 'cetes', 'etf']).optional().describe('Filtra por tipo de instrumento'),
+    tipo: z.enum(['accion', 'fondo', 'cetes', 'etf', 'divisa']).optional().describe('Filtra por tipo de instrumento'),
     riesgo: z.enum(['bajo', 'medio', 'alto']).optional().describe('Filtra por nivel de riesgo'),
   },
   async ({ tipo, riesgo }) => {
@@ -533,6 +626,98 @@ server.tool(
 
     return {
       content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
+  'crear_compra_tarjeta',
+  'Registra un cargo (compra) en una tarjeta de crédito del usuario. El saldo de la tarjeta se actualiza solo (trigger).',
+  {
+    userId: z.string().describe('Id del usuario'),
+    tarjetaId: z.string().describe('Id de la tarjeta (debe pertenecer al usuario)'),
+    descripcion: z.string().describe('Descripción de la compra, ej. "Pantalla LED 55\\""'),
+    monto: z.number().positive(),
+  },
+  async ({ userId, tarjetaId, descripcion, monto }) => {
+    const tarjeta = await pool.query(`select id from tarjetas_credito where id = $1 and usuario_id = $2`, [
+      tarjetaId,
+      userId,
+    ]);
+
+    if (tarjeta.rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Tarjeta no encontrada o no pertenece al usuario.' }) }],
+      };
+    }
+
+    const { rows } = await pool.query(
+      `insert into compras_tarjeta (id, tarjeta_id, usuario_id, descripcion, monto)
+       values ('compra-' || gen_random_uuid(), $1, $2, $3, $4)
+       returning id, descripcion, monto, fecha, meses_msi`,
+      [tarjetaId, userId, descripcion, monto],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'get_compras_tarjeta',
+  'Obtiene las compras del usuario en sus tarjetas de crédito, opcionalmente filtradas por tarjeta.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    tarjetaId: z.string().optional().describe('Filtra solo las compras de esta tarjeta'),
+  },
+  async ({ userId, tarjetaId }) => {
+    const condiciones = ['usuario_id = $1'];
+    const valores: unknown[] = [userId];
+
+    if (tarjetaId) {
+      valores.push(tarjetaId);
+      condiciones.push(`tarjeta_id = $${valores.length}`);
+    }
+
+    const { rows } = await pool.query(
+      `select id, tarjeta_id, descripcion, monto, fecha, meses_msi
+       from compras_tarjeta
+       where ${condiciones.join(' and ')}
+       order by fecha desc`,
+      valores,
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
+  'diferir_a_msi',
+  'Difiere una compra ya hecha a meses sin intereses. Solo aplica a compras que no estén ya diferidas.',
+  {
+    userId: z.string().describe('Id del usuario (debe ser dueño de la compra)'),
+    compraId: z.string().describe('Id de la compra'),
+    mesesMsi: z.number().int().positive().describe('A cuántos meses se difiere, ej. 12'),
+  },
+  async ({ userId, compraId, mesesMsi }) => {
+    const { rows } = await pool.query(
+      `update compras_tarjeta set meses_msi = $3
+       where id = $1 and usuario_id = $2 and meses_msi is null
+       returning id, tarjeta_id, descripcion, monto, fecha, meses_msi`,
+      [compraId, userId, mesesMsi],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Compra no encontrada, no pertenece al usuario, o ya está diferida.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
     };
   },
 );
