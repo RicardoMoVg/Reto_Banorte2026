@@ -1,8 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Pressable, StyleSheet } from 'react-native';
+import { Image, Pressable, StyleSheet } from 'react-native';
 import { useAgent } from '../../lib/a2ui/AgentProvider';
 import { useChatPanel } from '../../lib/ui/ChatPanelProvider';
 import { colores, espacio, radio } from '../../lib/ui/theme';
+
+const LOGO_MOSAICO = require('../../assets/logo_mosaico.png');
 
 /**
  * Botón flotante que abre/cierra la conversación con Mosaico.
@@ -33,11 +35,10 @@ export function BotonMosaico() {
       onPress={toggle}
       style={({ pressed }) => [styles.boton, pressed && styles.presionado]}
     >
-      <Ionicons
-        name={cargando ? 'ellipsis-horizontal' : 'sparkles'}
-        size={24}
-        color={colores.textoSobreAcento}
-      />
+      {cargando
+        ? <Ionicons name="ellipsis-horizontal" size={24} color={colores.textoSobreAcento} />
+        : <Image source={LOGO_MOSAICO} style={styles.logo} />
+      }
     </Pressable>
   );
 }
@@ -65,4 +66,9 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   presionado: { opacity: 0.8 },
+  logo: {
+    width: 52,
+    height: 52,
+    resizeMode: 'contain',
+  },
 });
