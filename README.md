@@ -119,13 +119,14 @@ solo teoría.
 > Postgres directo, nunca el REST de Supabase) y dejen prendido **"Enable
 > automatic RLS"** como red de seguridad.
 
-> ⚠️ **Pendiente de verificar en Windows:** el spawn del proceso hijo en
+> ✅ **Verificado en Windows:** el spawn del proceso hijo en
 > `server/lib/mcp/mcp-client.ts` (el que conecta `server/` a este paquete
-> por MCP/stdio) usa `spawn('npx', ...)` sin `shell: true`. En Windows esto
-> puede fallar con `spawn npx ENOENT`. Esto es distinto de lo de arriba —
-> ya probamos `schema.sql`/`seed.ts` en vivo, pero **no** el handshake MCP
-> completo desde `server/` — probarlo en cuanto configuren un
-> `DATABASE_URL` real ahí también.
+> por MCP/stdio) usaba `spawn('npx', ...)` sin `shell: true`, lo cual
+> truena en Windows con `spawn npx ENOENT` (`npx` ahí es un `.cmd`, y
+> `child_process.spawn` no puede ejecutarlo sin shell). Ya arreglado:
+> ahora se invoca `process.execPath` (node.exe) directo sobre el archivo
+> real de `tsx` (`tsx/dist/cli.mjs`), sin pasar por ningún `.cmd`/shell.
+> Handshake MCP completo probado en vivo desde `server/` contra Supabase.
 
 ## Estructura de carpetas
 
