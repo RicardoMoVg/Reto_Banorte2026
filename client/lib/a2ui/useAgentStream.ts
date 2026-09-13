@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetch } from 'expo/fetch';
+import { obtenerToken } from '../api/rest';
 import type { Mensaje } from './types';
 
 /**
@@ -89,9 +90,13 @@ export function useAgentStream(apiUrl: string, describirTablero?: () => unknown[
     ]);
 
     try {
+      const token = obtenerToken();
       const resp = await fetch(`${apiUrl}/api/agent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : null),
+        },
         body: JSON.stringify({
           message: texto,
           historial: aHistorial(mensajesRef.current),
