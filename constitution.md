@@ -1,4 +1,8 @@
-# Constitución del proyecto — Mosaico (Reto Banorte × Tec 2026)
+# Constitución del proyecto — Banortech (Reto Banorte × Tec 2026)
+
+> **Nombres:** **Banortech** es la aplicación; **Mosaico** es el agente de IA
+> que vive dentro de ella. El login dice Banortech, la ventana de conversación
+> dice Mosaico. No son sinónimos ni el rebranding de uno al otro.
 
 Este documento es el contrato que **todas las ramas y todas las personas**
 (o agentes de IA) trabajando en este repo deben respetar. No es documentación
@@ -247,33 +251,43 @@ en `client/components/` (ver sección 5).
 
 ## 5. Reglas para trabajo en ramas paralelas
 
-Ahora mismo hay dos frentes activos:
+Ya integrado en `main`: el mini-SDK A2UI (`client/lib/a2ui/` — catálogo,
+`SurfaceRenderer`, `useAgentStream`). **`client/App.tsx` ya no existe**: el
+`switch` manual que vivía ahí lo reemplazó el catálogo, y la navegación la
+maneja `expo-router` desde `client/app/`.
 
-- `feature/mini-sdk-a2ui` — construye el catálogo genérico
-  (`client/lib/a2ui/catalog.ts`, `SurfaceRenderer`, `useAgentStream`) que
-  reemplaza el `switch` manual de `client/App.tsx`.
+Frentes activos:
+
 - `feature/dynamic-components` — construye componentes de UI nuevos,
   genéricos/reusables (ej. una gráfica de pastel que sirve para cualquier
   categoría de datos, no solo crédito o pagos).
+- `feature/ui-layout` — las ventanas de la app (`client/app/`, expo-router)
+  y el sistema de diseño del cliente (`client/lib/ui/theme.ts` +
+  primitivas en `client/components/ui/`).
 
-Para que ambas ramas se puedan juntar sin fricción:
+Para que las ramas se puedan juntar sin fricción:
 
 1. **Todo componente nuevo sigue el contrato de la sección 4.3**, sin
-   importar en qué rama se creó. Así, cuando el catálogo del mini-SDK
-   exista, registrar un componente es una línea (`{ NombreComponente }` en
-   el mapa), no una reescritura.
+   importar en qué rama se creó. Por eso registrarlo en el catálogo es una
+   línea (`{ NombreComponente }` en el mapa) y no una reescritura.
 2. **Toda tool nueva sigue el contrato de la sección 4.2** (dominio-específica)
    **o el de la 4.4** (genérica, tipo `mostrarComponente`). Un componente
    sin su tool correspondiente en `server/lib/ai/a2ui-tools.ts` no sirve de
    nada — el agente nunca lo puede invocar.
-3. Si `feature/dynamic-components` necesita tocar `client/App.tsx` para
-   registrar un componente antes de que exista el catálogo, usa el mismo
-   patrón de `switch`/`if` ya establecido (ver los 4 bloques existentes:
-   `RastreadorMetas`, `TarjetaSaldo`, `ListaTransacciones`,
-   `ComparativoGastos`) — el mini-SDK absorbe ese `switch` después.
+3. Registrar un componente nuevo es **una línea** en
+   `client/lib/a2ui/catalog.ts` (el string debe ser idéntico al `tipo` que
+   regresa la tool). No se toca `SurfaceRenderer`, ni `useAgentStream`, ni
+   ninguna ventana de `client/app/` — si para agregar un bloque hace falta
+   editar una ventana, algo se rompió del contrato.
 4. Nombres de componentes y de `tipo` se coordinan **antes** de escribir
    código, no después — evita que dos personas nombren lo mismo distinto y
    choquen al mergear.
+5. **Ventana ≠ bloque.** Lo que vive en `client/app/` (rutas) y en
+   `client/components/ui/` (primitivas: `Pantalla`, `Tarjeta`, `Boton`...)
+   NO es UI generativa: no va en el catálogo y no recibe `mensajeAgente`.
+   Solo `client/components/*.tsx` (raíz) son bloques A2UI. Una ventana
+   tampoco pinta cifras financieras por su cuenta — o las muestra vía un
+   bloque que el agente generó, o muestra un estado vacío (sección 4.2).
 
 ## 6. Lo que NUNCA se hace
 

@@ -1,4 +1,8 @@
-# AGENTS.md — Mosaico
+# AGENTS.md — Banortech
+
+> **Nombres:** **Banortech** es la aplicación; **Mosaico** es el agente de IA
+> que vive dentro de ella. El login dice Banortech, la ventana de conversación
+> dice Mosaico. No son sinónimos ni el rebranding de uno al otro.
 
 Este repo es un monorepo simple de 3 paquetes Node independientes, cada uno
 con su propio `package.json` y su propio `AGENTS.md` con reglas internas:
