@@ -238,8 +238,12 @@ create table if not exists habitos_financieros (
   id text primary key,
   usuario_id text not null references usuarios(id),
   habito text not null,
-  racha_dias integer not null default 0 check (racha_dias >= 0)
+  racha_dias integer not null default 0 check (racha_dias >= 0),
+  activo boolean not null default true
 );
+
+-- migración idempotente: `activo` es el borrado lógico de un hábito.
+alter table habitos_financieros add column if not exists activo boolean not null default true;
 
 -- ============================================================
 -- Índices

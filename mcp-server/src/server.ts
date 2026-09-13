@@ -902,22 +902,119 @@ server.tool(
 );
 
 server.tool(
-  'get_habitos_financieros',
-  'Obtiene los hábitos financieros del usuario y su racha de días.',
+  'crear_diagnostico_financiero',
+  'Registra un nuevo diagnóstico financiero para el usuario (es histórico -- no reemplaza al anterior).',
   {
     userId: z.string().describe('Id del usuario'),
+    puntaje: z.number().int().min(0).max(100),
   },
-  async ({ userId }) => {
+  async ({ userId, puntaje }) => {
     const { rows } = await pool.query(
-      `select id, habito, racha_dias
+      `insert into diagnosticos_financieros (id, usuario_id, puntaje)
+       values ('diag-' || gen_random_uuid(), $1, $2)
+       returning puntaje, fecha`,
+      [userId, puntaje],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'get_habitos_financieros',
+  'Obtiene los hábitos financieros del usuario y su racha de días. Por defecto no incluye los desactivados.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    incluirInactivos: z.boolean().default(false).describe('Si es true, incluye también los hábitos desactivados'),
+  },
+  async ({ userId, incluirInactivos }) => {
+    const { rows } = await pool.query(
+      `select id, habito, racha_dias, activo
        from habitos_financieros
        where usuario_id = $1
+         and (activo or $2)
        order by racha_dias desc`,
-      [userId],
+      [userId, incluirInactivos],
     );
 
     return {
       content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
+  'crear_habito_financiero',
+  'Registra un nuevo hábito financiero que el usuario quiere seguir, con racha inicial en 0.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    habito: z.string().describe('Descripción del hábito, ej. "Ahorro automático semanal"'),
+  },
+  async ({ userId, habito }) => {
+    const { rows } = await pool.query(
+      `insert into habitos_financieros (id, usuario_id, habito)
+       values ('habito-' || gen_random_uuid(), $1, $2)
+       returning id, habito, racha_dias, activo`,
+      [userId, habito],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'actualizar_racha_habito',
+  'Suma (o resetea) los días de racha de un hábito activo.',
+  {
+    habitoId: z.string().describe('Id del hábito'),
+    dias: z.number().int().describe('Días a sumar a la racha (usa un número negativo del tamaño de la racha actual para resetear a 0)'),
+  },
+  async ({ habitoId, dias }) => {
+    const { rows } = await pool.query(
+      `update habitos_financieros
+       set racha_dias = greatest(racha_dias + $2, 0)
+       where id = $1 and activo
+       returning id, habito, racha_dias, activo`,
+      [habitoId, dias],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Hábito no encontrado o no está activo.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'desactivar_habito',
+  'Desactiva un hábito financiero (borrado lógico -- deja de aparecer en get_habitos_financieros).',
+  {
+    habitoId: z.string().describe('Id del hábito'),
+  },
+  async ({ habitoId }) => {
+    const { rows } = await pool.query(
+      `update habitos_financieros set activo = false where id = $1
+       returning id, habito, racha_dias, activo`,
+      [habitoId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Hábito no encontrado.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
     };
   },
 );

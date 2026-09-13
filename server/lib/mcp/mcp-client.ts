@@ -1110,24 +1110,102 @@ export async function getDiagnosticoFinanciero(
   return llamarTool<DiagnosticoFinanciero | null>('get_diagnostico_financiero', { userId });
 }
 
+export async function crearDiagnosticoFinanciero(
+  userId: string,
+  puntaje: number,
+): Promise<DiagnosticoFinanciero> {
+  if (USE_MOCK) {
+    DIAGNOSTICO_MOCK.puntaje = puntaje;
+    DIAGNOSTICO_MOCK.fecha = new Date().toISOString();
+    return DIAGNOSTICO_MOCK;
+  }
+
+  return llamarTool<DiagnosticoFinanciero>('crear_diagnostico_financiero', { userId, puntaje });
+}
+
 export interface HabitoFinanciero {
   id: string;
   habito: string;
   rachaDias: number;
+  activo: boolean;
 }
 
 const HABITOS_MOCK: HabitoFinanciero[] = [
-  { id: 'habito-1', habito: 'Ahorro automático semanal', rachaDias: 6 },
-  { id: 'habito-2', habito: 'Revisar gastos cada domingo', rachaDias: 3 },
+  { id: 'habito-1', habito: 'Ahorro automático semanal', rachaDias: 6, activo: true },
+  { id: 'habito-2', habito: 'Revisar gastos cada domingo', rachaDias: 3, activo: true },
 ];
 
-export async function getHabitosFinancieros(userId: string): Promise<HabitoFinanciero[]> {
-  if (USE_MOCK) return HABITOS_MOCK;
+export async function getHabitosFinancieros(
+  userId: string,
+  incluirInactivos = false,
+): Promise<HabitoFinanciero[]> {
+  if (USE_MOCK) {
+    return incluirInactivos ? HABITOS_MOCK : HABITOS_MOCK.filter((h) => h.activo);
+  }
 
-  const rows = await llamarTool<Array<{ id: string; habito: string; racha_dias: number }>>(
+  const rows = await llamarTool<Array<{ id: string; habito: string; racha_dias: number; activo: boolean }>>(
     'get_habitos_financieros',
-    { userId },
+    { userId, incluirInactivos },
   );
 
-  return rows.map((h) => ({ id: h.id, habito: h.habito, rachaDias: h.racha_dias }));
+  return rows.map((h) => ({ id: h.id, habito: h.habito, rachaDias: h.racha_dias, activo: h.activo }));
+}
+
+export async function crearHabitoFinanciero(userId: string, habito: string): Promise<HabitoFinanciero> {
+  if (USE_MOCK) {
+    const nuevo: HabitoFinanciero = {
+      id: `habito-mock-${HABITOS_MOCK.length + 1}`,
+      habito,
+      rachaDias: 0,
+      activo: true,
+    };
+    HABITOS_MOCK.push(nuevo);
+    return nuevo;
+  }
+
+  const h = await llamarTool<{ id: string; habito: string; racha_dias: number; activo: boolean }>(
+    'crear_habito_financiero',
+    { userId, habito },
+  );
+
+  return { id: h.id, habito: h.habito, rachaDias: h.racha_dias, activo: h.activo };
+}
+
+export async function actualizarRachaHabito(
+  habitoId: string,
+  dias: number,
+): Promise<HabitoFinanciero | { error: string }> {
+  if (USE_MOCK) {
+    const habito = HABITOS_MOCK.find((h) => h.id === habitoId && h.activo);
+    if (!habito) return { error: 'Hábito no encontrado o no está activo.' };
+    habito.rachaDias = Math.max(habito.rachaDias + dias, 0);
+    return habito;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; habito: string; racha_dias: number; activo: boolean }
+  >('actualizar_racha_habito', { habitoId, dias });
+
+  if ('error' in resultado) return resultado;
+
+  return { id: resultado.id, habito: resultado.habito, rachaDias: resultado.racha_dias, activo: resultado.activo };
+}
+
+export async function desactivarHabito(habitoId: string): Promise<HabitoFinanciero | { error: string }> {
+  if (USE_MOCK) {
+    const habito = HABITOS_MOCK.find((h) => h.id === habitoId);
+    if (!habito) return { error: 'Hábito no encontrado.' };
+    habito.activo = false;
+    return habito;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; habito: string; racha_dias: number; activo: boolean }
+  >('desactivar_habito', { habitoId });
+
+  if ('error' in resultado) return resultado;
+
+  return { id: resultado.id, habito: resultado.habito, rachaDias: resultado.racha_dias, activo: resultado.activo };
 }
