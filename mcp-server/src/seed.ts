@@ -23,13 +23,15 @@ async function main() {
 
   // --- Banca personal ---
   // cuentas va antes que transacciones: transacciones.cuenta_id la referencia.
-  // saldo de cuenta-1 = suma exacta de sus 3 transacciones de abajo
-  // (-85 + 15000 - 219 = 14696) -- consistente a propósito, no un número
-  // aparte inventado (antes decía 14915, copiado del mock viejo de solo
-  // 2 transacciones -- quedaba desincronizado con los datos reales del seed).
+  // cuenta-1 arranca en 0 -- el trigger trg_actualizar_saldo_cuenta lo va
+  // sumando solo conforme se insertan sus transacciones de abajo (termina
+  // en 14696 = -85 + 15000 - 219). No hay que mantenerlo sincronizado a
+  // mano (así se nos fue una vez: quedó en 14915, copiado del mock viejo).
+  // cuenta-2 no tiene transacciones en este seed, así que su saldo se
+  // queda tal cual se declara aquí.
   await pool.query(
     `insert into cuentas (id, usuario_id, tipo, alias, saldo) values
-       ('cuenta-1', 'demo-user', 'debito', 'Cuenta principal', 14696),
+       ('cuenta-1', 'demo-user', 'debito', 'Cuenta principal', 0),
        ('cuenta-2', 'demo-user', 'ahorro', 'Ahorro', 5000)
      on conflict (id) do nothing`,
   );

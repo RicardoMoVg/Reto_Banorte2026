@@ -65,6 +65,27 @@ create table if not exists transacciones (
   fecha timestamptz not null default now()
 );
 
+-- Mantiene cuentas.saldo consistente con sus transacciones, sin recalcular
+-- la suma completa en cada escritura (solo suma el monto nuevo). Asume que
+-- transacciones es append-only (nunca se editan/borran movimientos pasados,
+-- solo se insertan nuevos, como en un banco real) -- si algún día se
+-- necesita permitir editar/borrar una transacción, este trigger hay que
+-- extenderlo (revertir el monto viejo, no solo sumar el nuevo).
+create or replace function actualizar_saldo_cuenta() returns trigger as $$
+begin
+  if new.cuenta_id is not null then
+    update cuentas set saldo = saldo + new.monto where id = new.cuenta_id;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_actualizar_saldo_cuenta on transacciones;
+create trigger trg_actualizar_saldo_cuenta
+  after insert on transacciones
+  for each row
+  execute function actualizar_saldo_cuenta();
+
 -- ============================================================
 -- 2. Inversiones — perfilamiento, portafolios, simulación
 -- ============================================================
