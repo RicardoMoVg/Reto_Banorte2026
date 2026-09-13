@@ -14,6 +14,45 @@ const server = new McpServer({
   version: '0.1.0',
 });
 
+// --- Compartido ---
+
+server.tool(
+  'crear_usuario',
+  'Crea el perfil de banca (fila en usuarios) para un usuario recién registrado en Supabase Auth. Idempotente.',
+  {
+    userId: z.string().describe('Id del usuario -- debe ser el mismo uuid que asignó Supabase Auth al registrarse'),
+    nombre: z.string(),
+  },
+  async ({ userId, nombre }) => {
+    const { rows } = await pool.query(
+      `insert into usuarios (id, nombre) values ($1, $2)
+       on conflict (id) do nothing
+       returning id, nombre`,
+      [userId, nombre],
+    );
+
+    if (rows.length > 0) {
+      return { content: [{ type: 'text', text: JSON.stringify(rows[0]) }] };
+    }
+
+    // ya existía (conflicto) -- regresar la fila tal cual está.
+    const existente = await pool.query(`select id, nombre from usuarios where id = $1`, [userId]);
+    return { content: [{ type: 'text', text: JSON.stringify(existente.rows[0]) }] };
+  },
+);
+
+server.tool(
+  'get_usuario',
+  'Obtiene el perfil de banca (nombre) de un usuario ya autenticado.',
+  {
+    userId: z.string().describe('Id del usuario'),
+  },
+  async ({ userId }) => {
+    const { rows } = await pool.query(`select id, nombre from usuarios where id = $1`, [userId]);
+    return { content: [{ type: 'text', text: JSON.stringify(rows[0] ?? null) }] };
+  },
+);
+
 server.tool(
   'get_metas',
   'Obtiene las metas de ahorro del usuario junto con su porcentaje de avance. Por defecto no incluye las archivadas.',
