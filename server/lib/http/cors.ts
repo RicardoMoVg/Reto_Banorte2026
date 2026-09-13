@@ -10,7 +10,10 @@
  */
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  // PUT: lo usa PUT /api/auth/me (editar perfil). Sin PUT aquí, el
+  // preflight del navegador lo bloquea ANTES de llegar a la ruta -- curl no
+  // lo nota porque CORS es un mecanismo que solo aplica el navegador.
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
