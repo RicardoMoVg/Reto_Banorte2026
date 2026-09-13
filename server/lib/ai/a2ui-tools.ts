@@ -19,6 +19,13 @@ import {
   schemaTarjetaAccion,
 } from './a2ui-schemas';
 
+/**
+ * Tope de transacciones por llamada. Lo impone el schema Zod de
+ * `get_transacciones` en mcp-server/: pedir mas hace que el MCP rechace la
+ * llamada entera. Con mocks no se notaba porque los mocks no validan.
+ */
+const MAX_TRANSACCIONES = 50;
+
 const formatoMXN = new Intl.NumberFormat('es-MX', {
   style: 'currency',
   currency: 'MXN',
@@ -178,7 +185,7 @@ export function buildA2uiTools(userId: string) {
         // No existe una tool de MCP para "gasto por categoría" — se
         // agrega aquí en JS a partir de las transacciones, en vez de
         // agregar una tabla/query nueva en mcp-server/ (ver plan, Paso 3c).
-        const transacciones = await getTransaccionesRecientes(userId, { limite: 100 });
+        const transacciones = await getTransaccionesRecientes(userId, { limite: MAX_TRANSACCIONES });
 
         const porCategoria = new Map<string, number>();
         for (const t of transacciones) {
@@ -245,7 +252,7 @@ export function buildA2uiTools(userId: string) {
             if (!categoria) return [];
 
             const transacciones = await getTransaccionesRecientes(userId, {
-              limite: 200,
+              limite: MAX_TRANSACCIONES,
               categoria,
             });
             const gastos = transacciones.filter((t) => t.monto < 0);

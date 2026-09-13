@@ -123,16 +123,32 @@ async function llamarTool<T>(
     messages: [],
   });
 
-  const contenido =
-    (resultado as { content?: Array<{ type: string; text?: string }> })
-      .content ?? [];
+  const respuesta = resultado as {
+    content?: Array<{ type: string; text?: string }>;
+    isError?: boolean;
+  };
+  const contenido = respuesta.content ?? [];
   const bloque = contenido.find((c) => c.type === 'text' && c.text);
 
   if (!bloque?.text) {
     throw new Error(`Respuesta MCP de "${nombre}" sin contenido de texto.`);
   }
 
-  return JSON.parse(bloque.text) as T;
+  // Un error del MCP viene con isError y el texto NO es JSON, es un mensaje
+  // legible. Sin esta rama, el JSON.parse de abajo lo convertia en
+  // "Unexpected token 'M'" y el error real ("limite debe ser <= 50") se
+  // perdia -- costo un rato de debug la primera vez que paso.
+  if (respuesta.isError) {
+    throw new Error(`El servidor MCP rechazo "${nombre}": ${bloque.text}`);
+  }
+
+  try {
+    return JSON.parse(bloque.text) as T;
+  } catch {
+    throw new Error(
+      `Respuesta MCP de "${nombre}" no es JSON valido: ${bloque.text.slice(0, 200)}`,
+    );
+  }
 }
 
 export async function getMetasUsuario(
