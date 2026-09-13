@@ -205,8 +205,13 @@ create table if not exists polizas_seguro (
   cobertura text not null,
   prima_mensual numeric not null check (prima_mensual > 0),
   vigencia_fin date not null,
-  estatus text not null default 'activa' check (estatus in ('cotizada', 'activa', 'vencida'))
+  estatus text not null default 'activa' check (estatus in ('cotizada', 'activa', 'vencida', 'cancelada'))
 );
+
+-- migración idempotente: agrega 'cancelada' como estatus válido (borrado
+-- lógico -- aplica a pólizas cotizadas o activas).
+alter table polizas_seguro drop constraint if exists polizas_seguro_estatus_check;
+alter table polizas_seguro add constraint polizas_seguro_estatus_check check (estatus in ('cotizada', 'activa', 'vencida', 'cancelada'));
 
 create table if not exists siniestros (
   id text primary key,

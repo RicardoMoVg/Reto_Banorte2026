@@ -769,6 +769,114 @@ server.tool(
   },
 );
 
+server.tool(
+  'cotizar_poliza',
+  'Genera una cotización de seguro para el usuario (estatus "cotizada" -- todavía no está activa).',
+  {
+    userId: z.string().describe('Id del usuario'),
+    tipo: z.enum(['auto', 'vida', 'gmm', 'hogar']),
+    cobertura: z.string().describe('Descripción de la cobertura, ej. "Cobertura amplia"'),
+    primaMensual: z.number().positive(),
+    vigenciaFin: z.string().describe('Fecha de fin de vigencia (ISO 8601, ej. "2027-06-30")'),
+  },
+  async ({ userId, tipo, cobertura, primaMensual, vigenciaFin }) => {
+    const { rows } = await pool.query(
+      `insert into polizas_seguro (id, usuario_id, tipo, cobertura, prima_mensual, vigencia_fin, estatus)
+       values ('poliza-' || gen_random_uuid(), $1, $2, $3, $4, $5, 'cotizada')
+       returning id, tipo, cobertura, prima_mensual, vigencia_fin, estatus`,
+      [userId, tipo, cobertura, primaMensual, vigenciaFin],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'activar_poliza',
+  'Activa una póliza que estaba cotizada.',
+  {
+    polizaId: z.string().describe('Id de la póliza'),
+  },
+  async ({ polizaId }) => {
+    const { rows } = await pool.query(
+      `update polizas_seguro set estatus = 'activa'
+       where id = $1 and estatus = 'cotizada'
+       returning id, tipo, cobertura, prima_mensual, vigencia_fin, estatus`,
+      [polizaId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Póliza no encontrada o no está cotizada.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'cancelar_poliza',
+  'Cancela una póliza cotizada o activa (borrado lógico -- una ya vencida/cancelada no se puede volver a cancelar).',
+  {
+    polizaId: z.string().describe('Id de la póliza'),
+  },
+  async ({ polizaId }) => {
+    const { rows } = await pool.query(
+      `update polizas_seguro set estatus = 'cancelada'
+       where id = $1 and estatus in ('cotizada', 'activa')
+       returning id, tipo, cobertura, prima_mensual, vigencia_fin, estatus`,
+      [polizaId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Póliza no encontrada o ya no se puede cancelar.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'crear_siniestro',
+  'Reporta un siniestro/reclamo sobre una póliza activa del usuario.',
+  {
+    polizaId: z.string().describe('Id de la póliza (debe estar activa)'),
+    descripcion: z.string().describe('Descripción de lo ocurrido'),
+    montoReclamado: z.number().positive().optional(),
+  },
+  async ({ polizaId, descripcion, montoReclamado }) => {
+    const poliza = await pool.query(`select id from polizas_seguro where id = $1 and estatus = 'activa'`, [
+      polizaId,
+    ]);
+
+    if (poliza.rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Póliza no encontrada o no está activa.' }) }],
+      };
+    }
+
+    const { rows } = await pool.query(
+      `insert into siniestros (id, poliza_id, descripcion, monto_reclamado)
+       values ('siniestro-' || gen_random_uuid(), $1, $2, $3)
+       returning id, descripcion, monto_reclamado, estatus, fecha`,
+      [polizaId, descripcion, montoReclamado ?? null],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
 // --- Educación financiera ---
 
 server.tool(

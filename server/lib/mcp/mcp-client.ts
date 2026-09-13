@@ -948,6 +948,75 @@ export async function getPolizasSeguro(userId: string): Promise<PolizaSeguro[]> 
   }));
 }
 
+export async function cotizarPoliza(
+  userId: string,
+  tipo: 'auto' | 'vida' | 'gmm' | 'hogar',
+  cobertura: string,
+  primaMensual: number,
+  vigenciaFin: string,
+): Promise<PolizaSeguro> {
+  if (USE_MOCK) {
+    const poliza: PolizaSeguro = {
+      id: `poliza-mock-${POLIZAS_SEGURO_MOCK.length + 1}`,
+      tipo,
+      cobertura,
+      primaMensual,
+      vigenciaFin,
+      estatus: 'cotizada',
+    };
+    POLIZAS_SEGURO_MOCK.push(poliza);
+    return poliza;
+  }
+
+  const p = await llamarTool<{
+    id: string;
+    tipo: string;
+    cobertura: string;
+    prima_mensual: string | number;
+    vigencia_fin: string;
+    estatus: string;
+  }>('cotizar_poliza', { userId, tipo, cobertura, primaMensual, vigenciaFin });
+
+  return { id: p.id, tipo: p.tipo, cobertura: p.cobertura, primaMensual: Number(p.prima_mensual), vigenciaFin: p.vigencia_fin, estatus: p.estatus };
+}
+
+type PolizaCruda = {
+  id: string;
+  tipo: string;
+  cobertura: string;
+  prima_mensual: string | number;
+  vigencia_fin: string;
+  estatus: string;
+};
+
+function mapearPoliza(p: PolizaCruda): PolizaSeguro {
+  return { id: p.id, tipo: p.tipo, cobertura: p.cobertura, primaMensual: Number(p.prima_mensual), vigenciaFin: p.vigencia_fin, estatus: p.estatus };
+}
+
+export async function activarPoliza(polizaId: string): Promise<PolizaSeguro | { error: string }> {
+  if (USE_MOCK) {
+    const poliza = POLIZAS_SEGURO_MOCK.find((p) => p.id === polizaId && p.estatus === 'cotizada');
+    if (!poliza) return { error: 'Póliza no encontrada o no está cotizada.' };
+    poliza.estatus = 'activa';
+    return poliza;
+  }
+
+  const resultado = await llamarTool<{ error: string } | PolizaCruda>('activar_poliza', { polizaId });
+  return 'error' in resultado ? resultado : mapearPoliza(resultado);
+}
+
+export async function cancelarPoliza(polizaId: string): Promise<PolizaSeguro | { error: string }> {
+  if (USE_MOCK) {
+    const poliza = POLIZAS_SEGURO_MOCK.find((p) => p.id === polizaId && (p.estatus === 'cotizada' || p.estatus === 'activa'));
+    if (!poliza) return { error: 'Póliza no encontrada o ya no se puede cancelar.' };
+    poliza.estatus = 'cancelada';
+    return poliza;
+  }
+
+  const resultado = await llamarTool<{ error: string } | PolizaCruda>('cancelar_poliza', { polizaId });
+  return 'error' in resultado ? resultado : mapearPoliza(resultado);
+}
+
 export interface Siniestro {
   id: string;
   descripcion: string;
@@ -983,6 +1052,43 @@ export async function getSiniestrosUsuario(userId: string): Promise<Siniestro[]>
     fecha: s.fecha,
     tipoPoliza: s.tipo_poliza,
   }));
+}
+
+export async function crearSiniestro(
+  polizaId: string,
+  descripcion: string,
+  montoReclamado?: number,
+): Promise<Omit<Siniestro, 'tipoPoliza'> | { error: string }> {
+  if (USE_MOCK) {
+    const poliza = POLIZAS_SEGURO_MOCK.find((p) => p.id === polizaId && p.estatus === 'activa');
+    if (!poliza) return { error: 'Póliza no encontrada o no está activa.' };
+
+    const siniestro: Siniestro = {
+      id: `siniestro-mock-${SINIESTROS_MOCK.length + 1}`,
+      descripcion,
+      montoReclamado: montoReclamado ?? null,
+      estatus: 'en_revision',
+      fecha: new Date().toISOString(),
+      tipoPoliza: poliza.tipo,
+    };
+    SINIESTROS_MOCK.push(siniestro);
+    return siniestro;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; descripcion: string; monto_reclamado: string | number | null; estatus: string; fecha: string }
+  >('crear_siniestro', { polizaId, descripcion, montoReclamado });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    descripcion: resultado.descripcion,
+    montoReclamado: resultado.monto_reclamado == null ? null : Number(resultado.monto_reclamado),
+    estatus: resultado.estatus,
+    fecha: resultado.fecha,
+  };
 }
 
 // ============================================================
