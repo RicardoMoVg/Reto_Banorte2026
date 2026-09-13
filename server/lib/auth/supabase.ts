@@ -50,7 +50,30 @@ export async function getUsuarioDeRequest(req: Request): Promise<UsuarioAutentic
  *   const { id: userId } = auth;
  */
 export async function requireUsuario(req: Request): Promise<UsuarioAutenticado | Response> {
-  const usuario = await getUsuarioDeRequest(req);
+  let usuario: UsuarioAutenticado | null;
+
+  try {
+    usuario = await getUsuarioDeRequest(req);
+  } catch (error) {
+    /**
+     * `getSupabaseClient()` truena si faltan SUPABASE_URL o
+     * SUPABASE_ANON_KEY. Sin este catch, CUALQUIER endpoint autenticado
+     * respondia 500 con un stack trace y sin pista de que la causa era el
+     * .env -- costaba un rato darse cuenta, y le pasa igual a los 30
+     * endpoints. 500 sigue siendo el codigo correcto (es falla del
+     * servidor, no del cliente), pero ahora el mensaje dice que revisar.
+     */
+    console.error('[auth] no se pudo verificar el token:', error);
+    return jsonResponse(
+      {
+        error:
+          'Auth no esta configurado en el servidor. Falta SUPABASE_URL o ' +
+          'SUPABASE_ANON_KEY en server/.env (ver server/.env.example).',
+      },
+      { status: 500 },
+    );
+  }
+
   if (!usuario) {
     return jsonResponse({ error: 'No autenticado.' }, { status: 401 });
   }
