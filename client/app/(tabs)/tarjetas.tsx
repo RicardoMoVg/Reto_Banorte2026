@@ -1,72 +1,134 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { EstadoVacio } from '../../components/ui/EstadoVacio';
 import { PantallaMarca } from '../../components/ui/PantallaMarca';
-import { colores, espacio, radio, tipografia, vidrio } from '../../lib/ui/theme';
+import {
+  actualizarEstadoTarjeta,
+  getTarjetas,
+  obtenerCvv,
+  type TarjetaCreditoApi,
+  type TarjetaDebitoApi,
+} from '../../lib/api/rest';
+import { colores, espacio, radio, vidrio } from '../../lib/ui/theme';
 
-/**
- * Dato de una tarjeta del titular. Cuando venga del MCP será un tipo
- * compartido; por ahora vive aquí como dato estático de demostración
- * (permitido por constitution.md 4.2 porque es formato, no monto).
- */
+type TipoTarjeta = 'crédito' | 'débito';
+
+/** Forma común para pintar crédito y débito con el mismo `<Tarjeta>` -- difieren en si traen límite/saldo. */
 interface DatoTarjeta {
   id: string;
-  tipo: 'crédito' | 'débito';
-  numero: string;
-  vencimiento: string;
+  tipoApi: 'credito' | 'debito';
+  tipo: TipoTarjeta;
+  alias: string;
   marca: string;
+  ultimos4: string;
+  vencimiento: string;
   activa: boolean;
 }
 
-const TARJETAS_DEMO: DatoTarjeta[] = [
-  {
-    id: 'tc-4321',
+function aDatoCredito(t: TarjetaCreditoApi): DatoTarjeta {
+  return {
+    id: t.id,
+    tipoApi: 'credito',
     tipo: 'crédito',
-    numero: '4000 1234 5678 4321',
-    vencimiento: '09/28',
-    marca: 'Visa',
-    activa: true,
-  },
-  {
-    id: 'td-2045',
-    tipo: 'débito',
-    numero: '5200 3344 5566 2045',
-    vencimiento: '03/29',
-    marca: 'Mastercard',
-    activa: true,
-  },
-];
+    alias: t.alias,
+    marca: t.marca ?? '—',
+    ultimos4: t.ultimos4 ?? '····',
+    vencimiento: t.vencimiento ?? '—',
+    activa: t.activa,
+  };
+}
 
-/**
- * CVV de ejemplo. En producción esto vendría del MCP con un TTL corto
- * (CVV dinámico), no hardcodeado.
- */
-const CVV_DEMO: Record<string, string> = {
-  'tc-4321': '847',
-  'td-2045': '312',
-};
+function aDatoDebito(t: TarjetaDebitoApi): DatoTarjeta {
+  return {
+    id: t.id,
+    tipoApi: 'debito',
+    tipo: 'débito',
+    alias: t.alias,
+    marca: t.marca ?? '—',
+    ultimos4: t.ultimos4 ?? '····',
+    vencimiento: t.vencimiento ?? '—',
+    activa: t.activa,
+  };
+}
 
 /**
  * Pantalla de Tarjetas (Billetera).
  *
- * Zona de máxima seguridad y acceso rápido: ver datos de la tarjeta
- * digital, consultar el CVV dinámico para compras en línea, y
- * prender/apagar los plásticos físicos.
+ * Conectada de verdad a Postgres (crédito y débito, vía `GET /api/tarjetas`)
+ * -- antes vivía aquí como `TARJETAS_DEMO`/`CVV_DEMO` hardcodeados. El
+ * CVV se genera al momento en cada consulta (`POST /api/tarjetas/cvv`):
+ * nunca se guarda, así que sí cambia entre una consulta y la siguiente,
+ * a diferencia del valor estático de antes.
  */
 export default function Tarjetas() {
   const insets = useSafeAreaInsets();
-  const [tarjetas, setTarjetas] = useState(TARJETAS_DEMO);
-  const [cvvVisible, setCvvVisible] = useState<Record<string, boolean>>({});
+  const [tarjetas, setTarjetas] = useState<DatoTarjeta[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  function toggleActiva(id: string) {
-    setTarjetas((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, activa: !t.activa } : t)),
-    );
+  const [cvv, setCvv] = useState<Record<string, string>>({});
+  const [cargandoCvv, setCargandoCvv] = useState<Record<string, boolean>>({});
+  const [cargandoEstado, setCargandoEstado] = useState<Record<string, boolean>>({});
+  const [errorPorTarjeta, setErrorPorTarjeta] = useState<Record<string, string>>({});
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    setError(null);
+    try {
+      const { credito, debito } = await getTarjetas();
+      setTarjetas([...credito.map(aDatoCredito), ...debito.map(aDatoDebito)]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudieron cargar tus tarjetas.');
+    } finally {
+      setCargando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
+
+  async function toggleActiva(t: DatoTarjeta) {
+    setCargandoEstado((prev) => ({ ...prev, [t.id]: true }));
+    setErrorPorTarjeta((prev) => ({ ...prev, [t.id]: '' }));
+    try {
+      const resultado = await actualizarEstadoTarjeta(t.id, t.tipoApi, !t.activa);
+      setTarjetas((prev) => prev.map((x) => (x.id === t.id ? { ...x, activa: resultado.activa } : x)));
+    } catch (e) {
+      setErrorPorTarjeta((prev) => ({
+        ...prev,
+        [t.id]: e instanceof Error ? e.message : 'No se pudo actualizar la tarjeta.',
+      }));
+    } finally {
+      setCargandoEstado((prev) => ({ ...prev, [t.id]: false }));
+    }
   }
 
-  function toggleCvv(id: string) {
-    setCvvVisible((prev) => ({ ...prev, [id]: !prev[id] }));
+  async function toggleCvv(t: DatoTarjeta) {
+    // Ya visible: solo se oculta, no hace falta pedir uno nuevo.
+    if (cvv[t.id]) {
+      setCvv((prev) => {
+        const { [t.id]: _quitado, ...resto } = prev;
+        return resto;
+      });
+      return;
+    }
+
+    setCargandoCvv((prev) => ({ ...prev, [t.id]: true }));
+    setErrorPorTarjeta((prev) => ({ ...prev, [t.id]: '' }));
+    try {
+      const { cvv: nuevo } = await obtenerCvv(t.id, t.tipoApi);
+      setCvv((prev) => ({ ...prev, [t.id]: nuevo }));
+    } catch (e) {
+      setErrorPorTarjeta((prev) => ({
+        ...prev,
+        [t.id]: e instanceof Error ? e.message : 'No se pudo obtener el CVV.',
+      }));
+    } finally {
+      setCargandoCvv((prev) => ({ ...prev, [t.id]: false }));
+    }
   }
 
   return (
@@ -75,81 +137,119 @@ export default function Tarjetas() {
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 96 }]}
         showsVerticalScrollIndicator={false}
       >
-        {tarjetas.map((t) => (
-          <View key={t.id} style={styles.tarjeta}>
-            {/* — Encabezado de la tarjeta — */}
-            <View style={styles.encabezado}>
-              <View style={styles.marcaRow}>
-                <Ionicons
-                  name={t.tipo === 'crédito' ? 'card-outline' : 'wallet-outline'}
-                  size={20}
-                  color={colores.acento}
-                />
-                <Text style={styles.marcaTexto}>{t.marca}</Text>
-              </View>
-              <View style={styles.tipoBadge}>
-                <Text style={styles.tipoTexto}>{t.tipo}</Text>
-              </View>
-            </View>
-
-            {/* — Número — */}
-            <Text style={styles.numero}>
-              •••• •••• •••• {t.numero.slice(-4)}
-            </Text>
-
-            {/* — Vencimiento — */}
-            <View style={styles.fila}>
-              <Text style={styles.etiqueta}>Vencimiento</Text>
-              <Text style={styles.valor}>{t.vencimiento}</Text>
-            </View>
-
-            {/* — CVV dinámico — */}
-            <View style={styles.fila}>
-              <Text style={styles.etiqueta}>CVV</Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={cvvVisible[t.id] ? 'Ocultar CVV' : 'Mostrar CVV'}
-                onPress={() => toggleCvv(t.id)}
-                style={({ pressed }) => [styles.cvvBoton, pressed && styles.presionado]}
-              >
-                <Text style={styles.cvvTexto}>
-                  {cvvVisible[t.id] ? CVV_DEMO[t.id] ?? '—' : '•••'}
-                </Text>
-                <Ionicons
-                  name={cvvVisible[t.id] ? 'eye-off-outline' : 'eye-outline'}
-                  size={16}
-                  color={colores.acento}
-                />
-              </Pressable>
-            </View>
-
-            {/* — Switch encender/apagar plástico — */}
-            <View style={[styles.fila, styles.switchFila]}>
-              <View style={styles.switchInfo}>
-                <Ionicons
-                  name={t.activa ? 'shield-checkmark-outline' : 'shield-outline'}
-                  size={18}
-                  color={t.activa ? colores.positivo : colores.textoTenue}
-                />
-                <Text style={[styles.switchTexto, !t.activa && styles.inactiva]}>
-                  Plástico {t.activa ? 'activo' : 'apagado'}
-                </Text>
-              </View>
-              <Switch
-                value={t.activa}
-                onValueChange={() => toggleActiva(t.id)}
-                trackColor={{ false: '#767577', true: colores.acento }}
-                thumbColor={colores.superficie}
-                accessibilityLabel={`${t.activa ? 'Apagar' : 'Encender'} tarjeta •• ${t.numero.slice(-4)}`}
-              />
-            </View>
+        {cargando ? (
+          <View style={styles.centro}>
+            <ActivityIndicator color={colores.textoInverso} />
+            <Text style={styles.centroTexto}>Cargando tus tarjetas…</Text>
           </View>
-        ))}
+        ) : error ? (
+          <View style={styles.centro}>
+            <Ionicons name="cloud-offline-outline" size={32} color={vidrio.textoTenue} />
+            <Text style={styles.centroTexto}>{error}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Reintentar"
+              onPress={cargar}
+              style={({ pressed }) => [styles.reintentar, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons name="refresh" size={14} color={colores.textoInverso} />
+              <Text style={styles.reintentarTexto}>Reintentar</Text>
+            </Pressable>
+          </View>
+        ) : tarjetas.length === 0 ? (
+          <EstadoVacio
+            icono="card-outline"
+            titulo="Sin tarjetas"
+            descripcion="Todavía no tienes ninguna tarjeta registrada."
+          />
+        ) : (
+          tarjetas.map((t) => (
+            <View key={t.id} style={styles.tarjeta}>
+              {/* — Encabezado de la tarjeta — */}
+              <View style={styles.encabezado}>
+                <View style={styles.marcaRow}>
+                  <Ionicons
+                    name={t.tipo === 'crédito' ? 'card-outline' : 'wallet-outline'}
+                    size={20}
+                    color={colores.acento}
+                  />
+                  <Text style={styles.marcaTexto}>{t.marca}</Text>
+                </View>
+                <View style={styles.tipoBadge}>
+                  <Text style={styles.tipoTexto}>{t.tipo}</Text>
+                </View>
+              </View>
 
-        <Text style={styles.nota}>
-          El CVV dinámico cambia con cada consulta en producción. Aquí se muestra un valor
-          estático de demostración.
-        </Text>
+              {/* — Número — */}
+              <Text style={styles.numero}>•••• •••• •••• {t.ultimos4}</Text>
+
+              {/* — Vencimiento — */}
+              <View style={styles.fila}>
+                <Text style={styles.etiqueta}>Vencimiento</Text>
+                <Text style={styles.valor}>{t.vencimiento}</Text>
+              </View>
+
+              {/* — CVV dinámico — */}
+              <View style={styles.fila}>
+                <Text style={styles.etiqueta}>CVV</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={cvv[t.id] ? 'Ocultar CVV' : 'Mostrar CVV'}
+                  onPress={() => toggleCvv(t)}
+                  disabled={cargandoCvv[t.id]}
+                  style={({ pressed }) => [styles.cvvBoton, pressed && styles.presionado]}
+                >
+                  {cargandoCvv[t.id] ? (
+                    <ActivityIndicator size="small" color={colores.acento} />
+                  ) : (
+                    <Text style={styles.cvvTexto}>{cvv[t.id] ?? '•••'}</Text>
+                  )}
+                  <Ionicons
+                    name={cvv[t.id] ? 'eye-off-outline' : 'eye-outline'}
+                    size={16}
+                    color={colores.acento}
+                  />
+                </Pressable>
+              </View>
+
+              {/* — Switch encender/apagar plástico — */}
+              <View style={[styles.fila, styles.switchFila]}>
+                <View style={styles.switchInfo}>
+                  <Ionicons
+                    name={t.activa ? 'shield-checkmark-outline' : 'shield-outline'}
+                    size={18}
+                    color={t.activa ? colores.positivo : colores.textoTenue}
+                  />
+                  <Text style={[styles.switchTexto, !t.activa && styles.inactiva]}>
+                    Plástico {t.activa ? 'activo' : 'apagado'}
+                  </Text>
+                </View>
+                {cargandoEstado[t.id] ? (
+                  <ActivityIndicator size="small" color={colores.acento} />
+                ) : (
+                  <Switch
+                    value={t.activa}
+                    onValueChange={() => toggleActiva(t)}
+                    trackColor={{ false: '#767577', true: colores.acento }}
+                    thumbColor={colores.superficie}
+                    accessibilityLabel={`${t.activa ? 'Apagar' : 'Encender'} tarjeta •• ${t.ultimos4}`}
+                  />
+                )}
+              </View>
+
+              {errorPorTarjeta[t.id] ? (
+                <Text style={styles.errorTarjeta}>{errorPorTarjeta[t.id]}</Text>
+              ) : null}
+            </View>
+          ))
+        )}
+
+        {tarjetas.length > 0 ? (
+          <Text style={styles.nota}>
+            El CVV se genera al momento en cada consulta: nunca se guarda, así que cambia entre una
+            consulta y la siguiente.
+          </Text>
+        ) : null}
       </ScrollView>
     </PantallaMarca>
   );
@@ -157,6 +257,21 @@ export default function Tarjetas() {
 
 const styles = StyleSheet.create({
   scroll: { padding: espacio.lg, gap: espacio.lg },
+
+  centro: { alignItems: 'center', justifyContent: 'center', gap: espacio.sm, paddingTop: espacio.xxl },
+  centroTexto: { fontSize: 13, color: vidrio.textoTenue, textAlign: 'center' },
+  reintentar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacio.xs,
+    marginTop: espacio.xs,
+    borderRadius: radio.completo,
+    borderWidth: 1,
+    borderColor: vidrio.borde,
+    paddingHorizontal: espacio.md,
+    paddingVertical: espacio.xs,
+  },
+  reintentarTexto: { fontSize: 12, fontWeight: '600', color: colores.textoInverso },
 
   tarjeta: {
     borderRadius: radio.lg,
@@ -216,6 +331,8 @@ const styles = StyleSheet.create({
     borderColor: vidrio.borde,
     paddingHorizontal: espacio.md,
     paddingVertical: espacio.xs,
+    minWidth: 64,
+    justifyContent: 'center',
   },
   cvvTexto: { fontSize: 14, fontWeight: '700', color: colores.textoInverso },
   presionado: { opacity: 0.7 },
@@ -229,6 +346,8 @@ const styles = StyleSheet.create({
   switchInfo: { flexDirection: 'row', alignItems: 'center', gap: espacio.sm },
   switchTexto: { fontSize: 13, fontWeight: '600', color: colores.textoInverso },
   inactiva: { color: vidrio.textoTenue },
+
+  errorTarjeta: { fontSize: 11, lineHeight: 15, color: '#ffb4b4' },
 
   nota: {
     fontSize: 11,

@@ -89,8 +89,25 @@ async function main() {
   );
 
   await pool.query(
-    `insert into tarjetas_credito (id, usuario_id, alias, limite_credito, saldo_actual, tasa_anual) values
-       ('tarjeta-1', 'demo-user', 'Tarjeta Oro', 20000, 0, 32.4)
+    `insert into tarjetas_credito
+       (id, usuario_id, alias, limite_credito, saldo_actual, tasa_anual, ultimos4, vencimiento, marca) values
+       ('tarjeta-1', 'demo-user', 'Tarjeta Oro', 20000, 0, 32.4, '4321', '09/28', 'Visa')
+     on conflict (id) do nothing`,
+  );
+
+  // Backfill para instalaciones donde tarjeta-1 ya existía de antes de
+  // que existieran ultimos4/vencimiento/marca (el insert de arriba no la
+  // toca por el "on conflict do nothing").
+  await pool.query(
+    `update tarjetas_credito set ultimos4 = '4321', vencimiento = '09/28', marca = 'Visa'
+     where id = 'tarjeta-1' and ultimos4 is null`,
+  );
+
+  // Tarjeta de débito, ligada a cuenta-1 (la de débito de arriba) -- no
+  // tiene línea de crédito propia, solo gasta el saldo de esa cuenta.
+  await pool.query(
+    `insert into tarjetas_debito (id, usuario_id, cuenta_id, alias, ultimos4, vencimiento, marca) values
+       ('tarjeta-debito-1', 'demo-user', 'cuenta-1', 'Débito Clásica', '2045', '03/29', 'Mastercard')
      on conflict (id) do nothing`,
   );
 

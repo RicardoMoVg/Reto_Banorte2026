@@ -816,13 +816,13 @@ server.tool(
 
 server.tool(
   'get_tarjetas_credito',
-  'Obtiene las tarjetas de crédito del usuario: límite, saldo usado y tasa anual.',
+  'Obtiene las tarjetas de crédito del usuario: límite, saldo usado, tasa anual y el plástico (últimos 4, vencimiento, marca, si está activa).',
   {
     userId: z.string().describe('Id del usuario'),
   },
   async ({ userId }) => {
     const { rows } = await pool.query(
-      `select id, alias, limite_credito, saldo_actual, tasa_anual
+      `select id, alias, limite_credito, saldo_actual, tasa_anual, ultimos4, vencimiento, marca, activa
        from tarjetas_credito
        where usuario_id = $1`,
       [userId],
@@ -831,6 +831,52 @@ server.tool(
     return {
       content: [{ type: 'text', text: JSON.stringify(rows) }],
     };
+  },
+);
+
+server.tool(
+  'get_tarjetas_debito',
+  'Obtiene las tarjetas de débito del usuario (el plástico ligado a una cuenta -- no tienen línea de crédito propia).',
+  {
+    userId: z.string().describe('Id del usuario'),
+  },
+  async ({ userId }) => {
+    const { rows } = await pool.query(
+      `select id, cuenta_id, alias, ultimos4, vencimiento, marca, activa
+       from tarjetas_debito
+       where usuario_id = $1`,
+      [userId],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
+  'actualizar_estado_tarjeta',
+  'Activa o apaga el plástico de una tarjeta (crédito o débito) del usuario. No afecta el límite ni el saldo -- solo si se puede usar para pagar.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    id: z.string().describe('Id de la tarjeta'),
+    tipo: z.enum(['credito', 'debito']),
+    activa: z.boolean(),
+  },
+  async ({ userId, id, tipo, activa }) => {
+    const tabla = tipo === 'credito' ? 'tarjetas_credito' : 'tarjetas_debito';
+    const { rows } = await pool.query(
+      `update ${tabla} set activa = $3 where id = $1 and usuario_id = $2 returning id, activa`,
+      [id, userId, activa],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Tarjeta no encontrada o no pertenece al usuario.' }) }],
+      };
+    }
+
+    return { content: [{ type: 'text', text: JSON.stringify(rows[0]) }] };
   },
 );
 

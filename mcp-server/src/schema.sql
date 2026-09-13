@@ -206,7 +206,35 @@ create table if not exists tarjetas_credito (
   alias text not null,
   limite_credito numeric not null check (limite_credito > 0),
   saldo_actual numeric not null default 0,
-  tasa_anual numeric not null -- % anual, usado para CAT
+  tasa_anual numeric not null, -- % anual, usado para CAT
+  -- chrome del PLÁSTICO (pantalla Tarjetas), no de la línea de crédito en
+  -- sí: ninguna otra tool los toca. El CVV nunca vive aquí -- se genera al
+  -- vuelo (server/app/api/tarjetas/cvv/route.ts), nunca se guarda.
+  ultimos4 text,
+  vencimiento text, -- 'MM/AA'
+  marca text,
+  activa boolean not null default true
+);
+
+-- migración idempotente para bases ya desplegadas antes de que existieran
+-- estos campos.
+alter table tarjetas_credito add column if not exists ultimos4 text;
+alter table tarjetas_credito add column if not exists vencimiento text;
+alter table tarjetas_credito add column if not exists marca text;
+alter table tarjetas_credito add column if not exists activa boolean not null default true;
+
+-- Tarjeta de débito: liga a una cuenta (no a una línea de crédito propia)
+-- -- el plástico es solo una forma de gastar el saldo que ya tiene la
+-- cuenta, constitution.md 3.2 aplica igual: nunca se guarda un monto aquí.
+create table if not exists tarjetas_debito (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  cuenta_id text not null references cuentas(id),
+  alias text not null,
+  ultimos4 text,
+  vencimiento text,
+  marca text,
+  activa boolean not null default true
 );
 
 -- Un cargo individual a una tarjeta de crédito -- `tarjetas_credito` solo

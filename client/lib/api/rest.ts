@@ -187,3 +187,46 @@ export function getTransacciones(opciones: { limite?: number; categoria?: string
     `/api/transacciones${query ? `?${query}` : ''}`,
   );
 }
+
+export interface TarjetaCreditoApi {
+  id: string;
+  alias: string;
+  limiteCredito: number;
+  saldoActual: number;
+  tasaAnual: number;
+  ultimos4: string | null;
+  vencimiento: string | null;
+  marca: string | null;
+  activa: boolean;
+}
+
+export interface TarjetaDebitoApi {
+  id: string;
+  cuentaId: string;
+  alias: string;
+  ultimos4: string | null;
+  vencimiento: string | null;
+  marca: string | null;
+  activa: boolean;
+}
+
+/** Las dos tarjetas del titular (Billetera): crédito y débito, cada una con su plástico. */
+export function getTarjetas() {
+  return pedir<{ credito: TarjetaCreditoApi[]; debito: TarjetaDebitoApi[] }>('/api/tarjetas');
+}
+
+/** Enciende/apaga el plástico. No toca límite ni saldo. */
+export function actualizarEstadoTarjeta(id: string, tipo: 'credito' | 'debito', activa: boolean) {
+  return pedir<{ id: string; activa: boolean }>('/api/tarjetas', {
+    method: 'POST',
+    body: JSON.stringify({ id, tipo, activa }),
+  });
+}
+
+/** CVV dinámico: se genera al momento, nunca se guarda -- cada llamada trae uno distinto. */
+export function obtenerCvv(id: string, tipo: 'credito' | 'debito') {
+  return pedir<{ cvv: string }>('/api/tarjetas/cvv', {
+    method: 'POST',
+    body: JSON.stringify({ id, tipo }),
+  });
+}

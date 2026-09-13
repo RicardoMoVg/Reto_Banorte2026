@@ -1071,17 +1071,41 @@ export interface TarjetaCredito {
   limiteCredito: number;
   saldoActual: number;
   tasaAnual: number;
+  ultimos4: string | null;
+  vencimiento: string | null;
+  marca: string | null;
+  activa: boolean;
 }
 
 const TARJETAS_CREDITO_MOCK: TarjetaCredito[] = [
-  { id: 'tarjeta-1', alias: 'Tarjeta Oro', limiteCredito: 20000, saldoActual: 18400, tasaAnual: 32.4 },
+  {
+    id: 'tarjeta-1',
+    alias: 'Tarjeta Oro',
+    limiteCredito: 20000,
+    saldoActual: 18400,
+    tasaAnual: 32.4,
+    ultimos4: '4321',
+    vencimiento: '09/28',
+    marca: 'Visa',
+    activa: true,
+  },
 ];
 
 export async function getTarjetasCredito(userId: string): Promise<TarjetaCredito[]> {
   if (USE_MOCK) return TARJETAS_CREDITO_MOCK;
 
   const rows = await llamarTool<
-    Array<{ id: string; alias: string; limite_credito: string | number; saldo_actual: string | number; tasa_anual: string | number }>
+    Array<{
+      id: string;
+      alias: string;
+      limite_credito: string | number;
+      saldo_actual: string | number;
+      tasa_anual: string | number;
+      ultimos4: string | null;
+      vencimiento: string | null;
+      marca: string | null;
+      activa: boolean;
+    }>
   >('get_tarjetas_credito', { userId });
 
   return rows.map((t) => ({
@@ -1090,7 +1114,75 @@ export async function getTarjetasCredito(userId: string): Promise<TarjetaCredito
     limiteCredito: Number(t.limite_credito),
     saldoActual: Number(t.saldo_actual),
     tasaAnual: Number(t.tasa_anual),
+    ultimos4: t.ultimos4,
+    vencimiento: t.vencimiento,
+    marca: t.marca,
+    activa: t.activa,
   }));
+}
+
+export interface TarjetaDebito {
+  id: string;
+  cuentaId: string;
+  alias: string;
+  ultimos4: string | null;
+  vencimiento: string | null;
+  marca: string | null;
+  activa: boolean;
+}
+
+const TARJETAS_DEBITO_MOCK: TarjetaDebito[] = [
+  {
+    id: 'tarjeta-debito-1',
+    cuentaId: 'cuenta-1',
+    alias: 'Débito Clásica',
+    ultimos4: '2045',
+    vencimiento: '03/29',
+    marca: 'Mastercard',
+    activa: true,
+  },
+];
+
+export async function getTarjetasDebito(userId: string): Promise<TarjetaDebito[]> {
+  if (USE_MOCK) return TARJETAS_DEBITO_MOCK;
+
+  const rows = await llamarTool<
+    Array<{
+      id: string;
+      cuenta_id: string;
+      alias: string;
+      ultimos4: string | null;
+      vencimiento: string | null;
+      marca: string | null;
+      activa: boolean;
+    }>
+  >('get_tarjetas_debito', { userId });
+
+  return rows.map((t) => ({
+    id: t.id,
+    cuentaId: t.cuenta_id,
+    alias: t.alias,
+    ultimos4: t.ultimos4,
+    vencimiento: t.vencimiento,
+    marca: t.marca,
+    activa: t.activa,
+  }));
+}
+
+export async function actualizarEstadoTarjeta(
+  userId: string,
+  id: string,
+  tipo: 'credito' | 'debito',
+  activa: boolean,
+): Promise<{ id: string; activa: boolean } | { error: string }> {
+  if (USE_MOCK) return { id, activa };
+
+  return llamarTool<{ id: string; activa: boolean } | { error: string }>('actualizar_estado_tarjeta', {
+    userId,
+    id,
+    tipo,
+    activa,
+  });
 }
 
 export interface CompraTarjeta {
