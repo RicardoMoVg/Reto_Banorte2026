@@ -581,6 +581,38 @@ export async function venderPosicion(
   return { id: resultado.id, cantidad: Number(resultado.cantidad), precioPromedio: Number(resultado.precio_promedio), activa: resultado.activa };
 }
 
+export interface SimulacionInversion {
+  instrumento: string;
+  montoInicial: number;
+  anios: number;
+  rendimientoAnualEstimado: number;
+  valorFinalEstimado: number;
+  gananciaEstimada: number;
+}
+
+export async function simularInversion(
+  instrumentoId: string,
+  monto: number,
+  anios: number,
+): Promise<SimulacionInversion | { error: string }> {
+  if (USE_MOCK) {
+    const instrumento = INSTRUMENTOS_MOCK.find((i) => i.id === instrumentoId);
+    if (!instrumento) return { error: 'Instrumento no encontrado.' };
+
+    const valorFinal = monto * Math.pow(1 + instrumento.rendimientoAnualEstimado / 100, anios);
+    return {
+      instrumento: instrumento.nombre,
+      montoInicial: monto,
+      anios,
+      rendimientoAnualEstimado: instrumento.rendimientoAnualEstimado,
+      valorFinalEstimado: Math.round(valorFinal * 100) / 100,
+      gananciaEstimada: Math.round((valorFinal - monto) * 100) / 100,
+    };
+  }
+
+  return llamarTool<SimulacionInversion | { error: string }>('simular_inversion', { instrumentoId, monto, anios });
+}
+
 // ============================================================
 // Crédito
 // ============================================================
@@ -628,6 +660,40 @@ export async function getProductosCredito(tipo?: string): Promise<ProductoCredit
     plazoMaximoMeses: p.plazo_maximo_meses,
     descripcion: p.descripcion,
   }));
+}
+
+export interface SimulacionPlanPago {
+  monto: number;
+  plazoMeses: number;
+  tasaAnual: number;
+  pagoMensual: number;
+  totalPagado: number;
+  totalIntereses: number;
+}
+
+export async function simularPlanPago(
+  monto: number,
+  plazoMeses: number,
+  tasaAnual?: number,
+): Promise<SimulacionPlanPago> {
+  if (USE_MOCK) {
+    const tasa = tasaAnual ?? PRODUCTOS_CREDITO_MOCK.find((p) => p.tipo === 'personal')?.tasaReferencia ?? 32.4;
+    const tasaMensual = tasa / 100 / 12;
+    const pagoMensual =
+      tasaMensual === 0 ? monto / plazoMeses : (monto * tasaMensual) / (1 - Math.pow(1 + tasaMensual, -plazoMeses));
+    const totalPagado = pagoMensual * plazoMeses;
+
+    return {
+      monto,
+      plazoMeses,
+      tasaAnual: tasa,
+      pagoMensual: Math.round(pagoMensual * 100) / 100,
+      totalPagado: Math.round(totalPagado * 100) / 100,
+      totalIntereses: Math.round((totalPagado - monto) * 100) / 100,
+    };
+  }
+
+  return llamarTool<SimulacionPlanPago>('simular_plan_pago', { monto, plazoMeses, tasaAnual });
 }
 
 export interface TarjetaCredito {

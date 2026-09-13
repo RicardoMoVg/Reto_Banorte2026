@@ -442,6 +442,47 @@ server.tool(
   },
 );
 
+server.tool(
+  'simular_inversion',
+  'Simula cuánto crecería una inversión en un instrumento del catálogo, a interés compuesto anual, sin necesidad de comprarlo.',
+  {
+    instrumentoId: z.string().describe('Id del instrumento (ver get_instrumentos)'),
+    monto: z.number().positive().describe('Monto a invertir'),
+    anios: z.number().positive().describe('Horizonte de la simulación, en años'),
+  },
+  async ({ instrumentoId, monto, anios }) => {
+    const { rows } = await pool.query(
+      `select nombre, rendimiento_anual_estimado from instrumentos where id = $1`,
+      [instrumentoId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Instrumento no encontrado.' }) }],
+      };
+    }
+
+    const rendimientoAnual = Number(rows[0].rendimiento_anual_estimado);
+    const valorFinal = monto * Math.pow(1 + rendimientoAnual / 100, anios);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            instrumento: rows[0].nombre,
+            montoInicial: monto,
+            anios,
+            rendimientoAnualEstimado: rendimientoAnual,
+            valorFinalEstimado: Math.round(valorFinal * 100) / 100,
+            gananciaEstimada: Math.round((valorFinal - monto) * 100) / 100,
+          }),
+        },
+      ],
+    };
+  },
+);
+
 // --- Crédito ---
 
 server.tool(
@@ -510,6 +551,49 @@ server.tool(
 
     return {
       content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
+  'simular_plan_pago',
+  'Simula la mensualidad de un crédito para un monto y plazo cualquiera (amortización francesa), sin que ya exista un plan precargado. Si no se da tasaAnual, usa la del producto de crédito personal como referencia.',
+  {
+    monto: z.number().positive(),
+    plazoMeses: z.number().int().positive(),
+    tasaAnual: z.number().positive().optional().describe('% anual. Si no se especifica, se usa la tasa de referencia de get_productos_credito (personal).'),
+  },
+  async ({ monto, plazoMeses, tasaAnual }) => {
+    let tasa = tasaAnual;
+    if (tasa == null) {
+      const { rows } = await pool.query(
+        `select tasa_referencia from productos_credito where tipo = 'personal' limit 1`,
+      );
+      tasa = rows.length > 0 ? Number(rows[0].tasa_referencia) : 32.4;
+    }
+
+    const tasaMensual = tasa / 100 / 12;
+    const pagoMensual =
+      tasaMensual === 0
+        ? monto / plazoMeses
+        : (monto * tasaMensual) / (1 - Math.pow(1 + tasaMensual, -plazoMeses));
+
+    const totalPagado = pagoMensual * plazoMeses;
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            monto,
+            plazoMeses,
+            tasaAnual: tasa,
+            pagoMensual: Math.round(pagoMensual * 100) / 100,
+            totalPagado: Math.round(totalPagado * 100) / 100,
+            totalIntereses: Math.round((totalPagado - monto) * 100) / 100,
+          }),
+        },
+      ],
     };
   },
 );
