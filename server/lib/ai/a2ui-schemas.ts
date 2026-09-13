@@ -547,13 +547,23 @@ export const schemaListado = z.object({
       'solicitudes',
       'aportaciones',
       'habitos',
+      'metas',
+      'cuentas',
+      'compras-tarjeta',
+      'siniestros',
+      'diagnostico',
+      'perfil-inversion',
     ])
     .describe(
       'Que listar. "contactos": contactos de pago guardados. "transferencias": historial de ' +
         'envios y cobros. "tarjetas": tarjetas de credito con limite y saldo. "portafolio": ' +
         'posiciones de inversion. "polizas": seguros contratados y cotizados. "solicitudes": ' +
         'solicitudes de credito y su estatus. "aportaciones": planes de aportacion programada a ' +
-        'metas. "habitos": habitos financieros y su racha.',
+        'metas. "habitos": habitos financieros y su racha. "metas": TODAS las metas de ahorro del ' +
+        'usuario (para una sola meta usa mostrarProgresoMeta). "cuentas": cuentas bancarias y su ' +
+        'saldo. "compras-tarjeta": compras hechas con tarjeta de credito, a meses o de contado. ' +
+        '"siniestros": reclamaciones de seguro y su estatus. "diagnostico": el ultimo diagnostico ' +
+        'financiero registrado. "perfil-inversion": tolerancia al riesgo y horizonte de inversion.',
     ),
   titulo: z.string().describe('Encabezado de la lista, ej. "Tus contactos guardados".'),
   filtro: z
