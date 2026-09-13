@@ -60,9 +60,11 @@ function Navegador() {
     >
       <Stack.Protected guard={!!sesion}>
         <Stack.Screen name="(tabs)" />
-        {/* Fuera de (tabs): se abre encima, sin tab bar, y solo desde el
-            botón "Editar perfil". */}
         <Stack.Screen name="editar-perfil" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="transferir" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="pagar-servicios" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="retiro-sin-tarjeta" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="dimo" options={{ animation: 'slide_from_right' }} />
         {/* Modal: se desliza encima de la pestaña actual y al cerrarse
             devuelve al usuario justo ahí, como un chat de Messenger. */}
         <Stack.Screen name="chat" options={{ presentation: 'modal' }} />

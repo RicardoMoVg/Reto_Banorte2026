@@ -1,29 +1,36 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
 import { Pressable, StyleSheet } from 'react-native';
 import { useAgent } from '../../lib/a2ui/AgentProvider';
+import { useChatPanel } from '../../lib/ui/ChatPanelProvider';
 import { colores, espacio, radio } from '../../lib/ui/theme';
 
 /**
- * Botón flotante que abre la conversación con Mosaico.
+ * Botón flotante que abre/cierra la conversación con Mosaico.
  *
  * Se monta una sola vez en `app/(tabs)/_layout.tsx`, encima del navegador
- * de pestañas, así que aparece en TODAS las ventanas — es el equivalente a
- * la burbuja persistente de Messenger. Antes vivía dentro de Inicio y solo
- * existía ahí; desde que el chat es modal, tiene que poder invocarse desde
- * donde estés, porque ya no hay una pestaña a la que ir.
+ * de pestañas y del ChatFlotante, así que aparece en TODAS las ventanas.
+ *
+ * Antes navegaba a `/chat`; ahora hace toggle del panel flotante vía
+ * `useChatPanel()`. El botón se oculta cuando el panel está abierto para
+ * no estorbar — el panel tiene su propia X para cerrarse, y al cerrar el
+ * botón vuelve a aparecer.
  *
  * Cambia a un icono de espera mientras el agente responde: si el usuario
- * cerró el modal a media respuesta, esto le dice que sigue trabajando.
+ * cerró el panel a media respuesta, esto le dice que sigue trabajando.
  */
 export function BotonMosaico() {
   const { cargando } = useAgent();
+  const { abierto, toggle } = useChatPanel();
+
+  // Cuando el panel está abierto el botón no se renderiza: el panel tiene
+  // su propio botón de cierre y la burbuja flotante estorbaría el input.
+  if (abierto) return null;
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Abrir conversación con Mosaico"
-      onPress={() => router.push('/chat')}
+      onPress={toggle}
       style={({ pressed }) => [styles.boton, pressed && styles.presionado]}
     >
       <Ionicons
