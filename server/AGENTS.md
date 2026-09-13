@@ -6,11 +6,16 @@ de `server/`.
 
 ## Qué es y qué NO es este paquete
 
-Es un backend Next.js **sin UI propia** — solo expone `POST /api/agent`
-(`app/api/agent/route.ts`). No agregues páginas (`app/page.tsx`), layouts,
-CSS, ni ninguna dependencia de UI (Tailwind, framer-motion, lucide-react,
-etc.). Si sientes que necesitas eso, es una señal de que ese trabajo va en
-`client/`, no aquí.
+Es un backend Next.js **sin UI propia**. Su ruta principal es
+`POST /api/agent` (`app/api/agent/route.ts`, el camino del asistente de
+IA/A2UI), pero **no es la única que puede existir**: acciones bancarias
+tradicionales (login, una transferencia por formulario normal, etc. — ver
+`constitution.md` 3.3) pueden vivir en otros route handlers REST normales
+de Next.js, sin LLM ni protocolo NDJSON de por medio. Lo que nunca cambia:
+no agregues páginas (`app/page.tsx`), layouts, CSS, ni ninguna dependencia
+de UI (Tailwind, framer-motion, lucide-react, etc.) — eso es trabajo de
+`client/`, no de aquí, sin importar cuántos route handlers tenga este
+paquete.
 
 ## Dónde va cada cosa
 
