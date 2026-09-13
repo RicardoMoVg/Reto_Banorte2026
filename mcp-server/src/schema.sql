@@ -62,6 +62,20 @@ alter table metas add column if not exists estatus text not null default 'activa
 alter table metas drop constraint if exists metas_estatus_check;
 alter table metas add constraint metas_estatus_check check (estatus in ('activa', 'completada', 'archivada'));
 
+-- El COMPROMISO de aportar a una meta periódicamente (ej. "$634/mes por 6
+-- meses") -- distinto de `aportar_a_meta`, que registra una aportación YA
+-- hecha. Esta tabla es la "receta" del plan; cada aportación real seguirá
+-- pasando por `aportar_a_meta` (no hay job que la ejecute sola).
+create table if not exists aportaciones_programadas (
+  id text primary key,
+  usuario_id text not null references usuarios(id),
+  meta_id text not null references metas(id),
+  monto numeric not null check (monto > 0),
+  periodicidad text not null check (periodicidad in ('semanal', 'quincenal', 'mensual')),
+  fecha_inicio date not null,
+  estatus text not null default 'activa' check (estatus in ('activa', 'completada', 'cancelada'))
+);
+
 create table if not exists transacciones (
   id text primary key,
   usuario_id text not null references usuarios(id),
@@ -106,10 +120,18 @@ create table if not exists perfiles_inversion (
 create table if not exists instrumentos (
   id text primary key,
   nombre text not null,
-  tipo text not null check (tipo in ('accion', 'fondo', 'cetes', 'etf')),
+  tipo text not null check (tipo in ('accion', 'fondo', 'cetes', 'etf', 'divisa')),
   riesgo text not null check (riesgo in ('bajo', 'medio', 'alto')),
-  rendimiento_anual_estimado numeric not null -- % anual, para poder simular ("si invierto X...")
+  -- % anual, para poder simular ("si invierto X..."). Para 'divisa' esto es
+  -- una apreciación estimada contra MXN, no un rendimiento fijo real (una
+  -- divisa fluctúa) -- simplificación aceptada para el demo, no modelamos
+  -- tipo de cambio en vivo.
+  rendimiento_anual_estimado numeric not null
 );
+
+-- migración idempotente: agrega 'divisa' como tipo válido de instrumento.
+alter table instrumentos drop constraint if exists instrumentos_tipo_check;
+alter table instrumentos add constraint instrumentos_tipo_check check (tipo in ('accion', 'fondo', 'cetes', 'etf', 'divisa'));
 
 create table if not exists posiciones_portafolio (
   id text primary key,
@@ -150,6 +172,37 @@ create table if not exists tarjetas_credito (
   saldo_actual numeric not null default 0,
   tasa_anual numeric not null -- % anual, usado para CAT
 );
+
+-- Un cargo individual a una tarjeta de crédito -- `tarjetas_credito` solo
+-- tenía `saldo_actual` agregado, sin historial de compras. `meses_msi` es
+-- null en una compra normal; se llena cuando se difiere a meses sin
+-- intereses (crear_compra_tarjeta la deja null, diferir_a_msi la fija).
+create table if not exists compras_tarjeta (
+  id text primary key,
+  tarjeta_id text not null references tarjetas_credito(id),
+  usuario_id text not null references usuarios(id),
+  descripcion text not null,
+  monto numeric not null check (monto > 0),
+  fecha timestamptz not null default now(),
+  meses_msi integer check (meses_msi > 0)
+);
+
+-- Mantiene tarjetas_credito.saldo_actual consistente con sus compras, mismo
+-- criterio que trg_actualizar_saldo_cuenta (append-only, solo suma en
+-- INSERT). Diferir a MSI no cambia el saldo total de la tarjeta -- solo
+-- cambia cómo se paga esa compra, no cuánto se debe.
+create or replace function actualizar_saldo_tarjeta() returns trigger as $$
+begin
+  update tarjetas_credito set saldo_actual = saldo_actual + new.monto where id = new.tarjeta_id;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_actualizar_saldo_tarjeta on compras_tarjeta;
+create trigger trg_actualizar_saldo_tarjeta
+  after insert on compras_tarjeta
+  for each row
+  execute function actualizar_saldo_tarjeta();
 
 create table if not exists solicitudes_credito (
   id text primary key,
@@ -264,10 +317,13 @@ alter table habitos_financieros add column if not exists activo boolean not null
 
 create index if not exists idx_cuentas_usuario on cuentas(usuario_id);
 create index if not exists idx_metas_usuario on metas(usuario_id);
+create index if not exists idx_aportaciones_programadas_usuario on aportaciones_programadas(usuario_id);
 create index if not exists idx_transacciones_usuario on transacciones(usuario_id, fecha desc);
 create index if not exists idx_transacciones_cuenta on transacciones(cuenta_id);
 create index if not exists idx_posiciones_usuario on posiciones_portafolio(usuario_id);
 create index if not exists idx_tarjetas_usuario on tarjetas_credito(usuario_id);
+create index if not exists idx_compras_tarjeta_tarjeta on compras_tarjeta(tarjeta_id);
+create index if not exists idx_compras_tarjeta_usuario on compras_tarjeta(usuario_id, fecha desc);
 create index if not exists idx_solicitudes_usuario on solicitudes_credito(usuario_id);
 create index if not exists idx_planes_pago_tarjeta on planes_pago(tarjeta_id);
 create index if not exists idx_contactos_usuario on contactos_pago(usuario_id);
