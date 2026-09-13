@@ -848,17 +848,24 @@ const CONTACTOS_PAGO_MOCK: ContactoPago[] = [
   { id: 'contacto-1', nombre: 'María López', clabe: '012180012345678901', activo: true },
 ];
 
+export interface FiltroContactosPago {
+  nombre?: string;
+  incluirInactivos?: boolean;
+}
+
 export async function getContactosPago(
   userId: string,
-  incluirInactivos = false,
+  { nombre, incluirInactivos = false }: FiltroContactosPago = {},
 ): Promise<ContactoPago[]> {
   if (USE_MOCK) {
-    return incluirInactivos ? CONTACTOS_PAGO_MOCK : CONTACTOS_PAGO_MOCK.filter((c) => c.activo);
+    let resultado = incluirInactivos ? CONTACTOS_PAGO_MOCK : CONTACTOS_PAGO_MOCK.filter((c) => c.activo);
+    if (nombre) resultado = resultado.filter((c) => c.nombre.toLowerCase().includes(nombre.toLowerCase()));
+    return resultado;
   }
 
   const rows = await llamarTool<Array<{ id: string; nombre: string; clabe: string | null; activo: boolean }>>(
     'get_contactos_pago',
-    { userId, incluirInactivos },
+    { userId, nombre, incluirInactivos },
   );
 
   return rows.map((c) => ({ id: c.id, nombre: c.nombre, clabe: c.clabe, activo: c.activo }));

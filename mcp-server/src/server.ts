@@ -675,18 +675,26 @@ server.tool(
 
 server.tool(
   'get_contactos_pago',
-  'Obtiene los contactos de pago guardados del usuario. Por defecto no incluye los desactivados.',
+  'Obtiene los contactos de pago guardados del usuario, opcionalmente filtrados por nombre. Por defecto no incluye los desactivados.',
   {
     userId: z.string().describe('Id del usuario'),
+    nombre: z.string().optional().describe('Filtra por contactos cuyo nombre contenga este texto (sin importar mayúsculas/minúsculas), ej. "Juan"'),
     incluirInactivos: z.boolean().default(false).describe('Si es true, incluye también los contactos desactivados'),
   },
-  async ({ userId, incluirInactivos }) => {
+  async ({ userId, nombre, incluirInactivos }) => {
+    const condiciones = ['usuario_id = $1', '(activo or $2)'];
+    const valores: unknown[] = [userId, incluirInactivos];
+
+    if (nombre) {
+      valores.push(`%${nombre}%`);
+      condiciones.push(`nombre ilike $${valores.length}`);
+    }
+
     const { rows } = await pool.query(
       `select id, nombre, clabe, activo
        from contactos_pago
-       where usuario_id = $1
-         and (activo or $2)`,
-      [userId, incluirInactivos],
+       where ${condiciones.join(' and ')}`,
+      valores,
     );
 
     return {
