@@ -90,7 +90,17 @@ async function main() {
 
   await pool.query(
     `insert into tarjetas_credito (id, usuario_id, alias, limite_credito, saldo_actual, tasa_anual) values
-       ('tarjeta-1', 'demo-user', 'Tarjeta Oro', 20000, 18400, 32.4)
+       ('tarjeta-1', 'demo-user', 'Tarjeta Oro', 20000, 0, 32.4)
+     on conflict (id) do nothing`,
+  );
+
+  // tarjeta-1 arranca en 0 -- mismo criterio que cuenta-1 (ver arriba): el
+  // trigger trg_actualizar_saldo_tarjeta lo va sumando solo conforme se
+  // insertan sus compras de abajo (termina en 18400 = 12000 + 6400).
+  await pool.query(
+    `insert into compras_tarjeta (id, tarjeta_id, usuario_id, descripcion, monto, fecha, meses_msi) values
+       ('compra-1', 'tarjeta-1', 'demo-user', 'Pantalla LED 55"', 12000, now() - interval '20 day', 12),
+       ('compra-2', 'tarjeta-1', 'demo-user', 'Supermercado', 6400, now() - interval '2 day', null)
      on conflict (id) do nothing`,
   );
 
