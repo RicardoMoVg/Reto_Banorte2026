@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { colores } from '../lib/ui/theme';
 
 export interface Transaccion {
   descripcion: string;
@@ -57,19 +58,19 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    backgroundColor: '#ffffff',
+    borderColor: colores.borde,
+    backgroundColor: colores.superficie,
     padding: 16,
   },
   titulo: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#171717',
+    color: colores.texto,
     marginBottom: 8,
   },
   lista: {
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: colores.bordeSutil,
   },
   fila: {
     flexDirection: 'row',
@@ -78,24 +79,24 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: colores.bordeSutil,
   },
   filaTexto: { flexShrink: 1 },
-  descripcion: { fontSize: 13, color: '#262626' },
+  descripcion: { fontSize: 13, color: colores.texto },
   categoria: {
     fontSize: 10,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    color: '#a3a3a3',
+    color: colores.textoTenue,
     marginTop: 2,
   },
   monto: { fontSize: 13, fontWeight: '600' },
-  montoPositivo: { color: '#059669' },
-  montoNegativo: { color: '#171717' },
+  montoPositivo: { color: colores.positivo },
+  montoNegativo: { color: colores.texto },
   mensaje: {
     marginTop: 12,
     fontSize: 12,
     lineHeight: 16,
-    color: '#737373',
+    color: colores.textoApoyo,
   },
 });

@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { colores } from '../lib/ui/theme';
 
 export interface RastreadorMetasProps {
   titulo: string;
@@ -33,7 +34,6 @@ export function RastreadorMetas({ titulo, porcentaje, mensajeAgente }: Rastreado
   );
 }
 
-const BANORTE = '#EB0029';
 
 const styles = StyleSheet.create({
   card: {
@@ -41,8 +41,8 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    backgroundColor: '#ffffff',
+    borderColor: colores.borde,
+    backgroundColor: colores.superficie,
     padding: 16,
   },
   header: {
@@ -56,29 +56,29 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 14,
     fontWeight: '600',
-    color: '#171717',
+    color: colores.texto,
   },
   porcentaje: {
     fontSize: 14,
     fontWeight: '700',
-    color: BANORTE,
+    color: colores.marca,
   },
   trackFondo: {
     height: 12,
     width: '100%',
     borderRadius: 999,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colores.marcaSuave,
     overflow: 'hidden',
   },
   trackRelleno: {
     height: '100%',
     borderRadius: 999,
-    backgroundColor: BANORTE,
+    backgroundColor: colores.marca,
   },
   mensaje: {
     marginTop: 8,
     fontSize: 12,
     lineHeight: 16,
-    color: '#737373',
+    color: colores.textoApoyo,
   },
 });

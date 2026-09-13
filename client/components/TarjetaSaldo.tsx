@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { colores } from '../lib/ui/theme';
 
 export interface TarjetaSaldoProps {
   titulo: string;
@@ -34,8 +35,8 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    backgroundColor: '#ffffff',
+    borderColor: colores.borde,
+    backgroundColor: colores.superficie,
     padding: 16,
   },
   titulo: {
@@ -43,18 +44,18 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    color: '#737373',
+    color: colores.textoApoyo,
     marginBottom: 12,
   },
   monto: {
     fontSize: 26,
     fontWeight: '700',
-    color: '#171717',
+    color: colores.texto,
   },
   mensaje: {
     marginTop: 8,
     fontSize: 12,
     lineHeight: 16,
-    color: '#737373',
+    color: colores.textoApoyo,
   },
 });
