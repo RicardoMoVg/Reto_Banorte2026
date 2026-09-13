@@ -78,19 +78,35 @@ No hace falta para desarrollar: sin `DATABASE_URL` en `server/.env`, todo
 corre con mocks. Solo instálenlo si van a trabajar la capa de datos real:
 
 ```bash
-createdb mosaico
 cd mcp-server
 npm install
-cp .env.example .env   # editar con el DATABASE_URL real
+cp .env.example .env   # editar con el DATABASE_URL real (ver notas abajo)
 npm run seed
 ```
 
+`schema.sql` + `seed.ts` (17 tablas cubriendo las 6 categorías del brief,
+más un trigger que mantiene `cuentas.saldo` sincronizado con
+`transacciones`) ya están **verificados en vivo contra Supabase** — no son
+solo teoría.
+
+> ⚠️ **Si usan Supabase**, copien el connection string del **"Session
+> pooler"**, no el de "Direct connection" — el directo
+> (`db.<project-ref>.supabase.co`) resuelve solo por IPv6 hoy en día y
+> puede fallar con `getaddrinfo ENOENT` según la red. El del pooler
+> (`aws-0-<region>.pooler.supabase.com:6543`) sí resuelve por IPv4 normal.
+>
+> En **Supabase → Project Settings → API**, apaguen **"Enable Data API"** y
+> **"Automatically expose new tables"** (no las usamos — `mcp-server` habla
+> Postgres directo, nunca el REST de Supabase) y dejen prendido **"Enable
+> automatic RLS"** como red de seguridad.
+
 > ⚠️ **Pendiente de verificar en Windows:** el spawn del proceso hijo en
-> `lib/mcp/mcp-client.ts` usa `spawn('npx', ...)` sin `shell: true`. En
-> Windows esto puede fallar con `spawn npx ENOENT` (Node no resuelve
-> `npx.cmd` directo). Como todo el desarrollo hasta ahora usó los mocks
-> (nunca se llegó a spawnear el proceso real), esto no se ha probado en
-> anger — probarlo en cuanto configuren un `DATABASE_URL` real.
+> `server/lib/mcp/mcp-client.ts` (el que conecta `server/` a este paquete
+> por MCP/stdio) usa `spawn('npx', ...)` sin `shell: true`. En Windows esto
+> puede fallar con `spawn npx ENOENT`. Esto es distinto de lo de arriba —
+> ya probamos `schema.sql`/`seed.ts` en vivo, pero **no** el handshake MCP
+> completo desde `server/` — probarlo en cuanto configuren un
+> `DATABASE_URL` real ahí también.
 
 ## Estructura de carpetas
 
