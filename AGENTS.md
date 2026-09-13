@@ -34,3 +34,7 @@ agrega detalles internos de ese paquete específico.
 - Mensajes de commit cortos y concretos: una línea `tipo: qué se hizo`
   (`feat:`, `fix:`, `docs:`...) + máximo 2-4 líneas de cuerpo si hace falta
   contexto. Nada de listas con viñetas ni explicaciones largas.
+- Nunca agregar líneas de co-autoría de agentes de IA en los commits (ej.
+  `Co-Authored-By: Claude...`). El historial del repo no lleva esa
+  atribución, sin importar qué herramienta se haya usado para escribir el
+  código.

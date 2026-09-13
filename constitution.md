@@ -35,23 +35,39 @@ código se escribió. El consejo del brief es literal: **"elijan un problema
 pequeño y resuélvanlo completo"** — un flujo financiero real, de punta a
 punta, vale más que cinco pantallas a medias.
 
+**Esto no es una app que solo sabe chatear.** Mosaico es una app de banco:
+tiene login/autenticación, pantallas tradicionales (ver saldo, hacer una
+transferencia con un formulario normal, etc.) igual que cualquier app
+bancaria real. El asistente de IA con UI generativa es **un agregado** —
+una forma más, conversacional, de llegar a esas mismas funciones — no un
+reemplazo de la banca tradicional ni la única manera de usar la app. Ver
+sección 3.3 para qué implica esto en la arquitectura.
+
 ## 2. Las tres piezas no negociables
 
 Tomado directo del brief — cualquier solución tiene que tener estas tres
 capas, sin excepción:
 
-1. **LLM** — el modelo es el orquestador central. Decide qué mostrar y
-   cuándo, nunca es un chatbot pegado a un lado.
-2. **MCP** — la única fuente de datos financieros. El modelo **nunca**
-   inventa cifras; todo dato numérico que se muestra viene de una tool de
-   MCP (`mcp-server/`), aunque esa tool regrese datos sintéticos/mock.
+Estas tres aplican **dentro del flujo del asistente de IA** — no a toda la
+app (ver 3.3: hay pantallas tradicionales, como login, que quedan fuera a
+propósito):
+
+1. **LLM** — dentro del asistente, el modelo es el orquestador central.
+   Decide qué mostrar y cuándo, nunca es un chatbot pegado a un lado.
+2. **MCP** — la única fuente de **datos financieros que el agente muestra**.
+   El modelo **nunca** inventa cifras; todo dato numérico que el asistente
+   presenta viene de una tool de MCP (`mcp-server/`), aunque esa tool
+   regrese datos sintéticos/mock. Esto no dice que TODO en la app pase por
+   MCP — ver 3.3.
 3. **A2UI (o protocolo equivalente)** — el agente transmite **JSON
    declarativo**, nunca código ejecutable ni JSX ya renderizado. El cliente
    decide cómo pintarlo con su propio catálogo de componentes.
 
 El ciclo se cierra: `Usuario → Agente/LLM → MCP → A2UI → Componentes`, y la
 interacción del usuario con esa UI regresa al agente como contexto para el
-siguiente turno.
+siguiente turno. Esto describe el camino del asistente — las pantallas
+tradicionales (3.3) tienen su propio camino, más corto y sin LLM de por
+medio.
 
 ## 3. Arquitectura del repo (dónde vive cada cosa)
 
@@ -129,6 +145,36 @@ contienen un valor numérico resuelto (monto, porcentaje, saldo) — solo lo
 necesario para volver a pedirlo. Si una tool nueva no se puede rehidratar
 solo con sus `parameters` de Zod (ej. depende de más contexto), ese es un
 problema de diseño de la tool, no algo que se resuelve guardando el número.
+
+### 3.3 Banca tradicional vs. asistente de IA — qué NO pasa por MCP/A2UI
+
+Mosaico no es "un chat que hace de banco" — es un banco (con login,
+pantallas normales de saldo/transferencias/etc.) que además tiene un
+asistente de IA con UI generativa como un canal más. Las secciones 2 y 4
+(LLM + MCP + A2UI, el contrato NDJSON) describen **el camino del
+asistente**, no el único camino de la app. Concretamente:
+
+- **Autenticación/sesión** (login, registro, tokens, recuperar contraseña)
+  **no pasa por MCP**. MCP es la capa de datos *financieros* que el agente
+  necesita leer/escribir para responder — no es un gateway de identidad. La
+  autenticación vive donde vive cualquier auth de app normal (`server/`
+  hablando con el proveedor de auth que se elija, o directo con Postgres),
+  fuera del protocolo A2UI-lite.
+- **Acciones bancarias tradicionales** (ej. una pantalla normal de
+  "Transferir dinero" con un formulario, sin hablarle a la IA) también
+  existen y **son bienvenidas** en `client/`. Pueden llamar a `server/` por
+  un endpoint REST normal (no el NDJSON de `/api/agent`) que a su vez sí
+  puede usar las mismas funciones de `lib/mcp/mcp-client.ts` para tocar el
+  mismo dato — el punto no es que MCP desaparezca ahí, sino que **el LLM no
+  tiene que estar en medio** para que el usuario haga algo tan común como
+  una transferencia. El mismo dato/acción puede tener dos entradas: una
+  conversacional (agente → A2UI) y una tradicional (formulario → REST) —
+  ambas válidas, no hace falta elegir una sola.
+- **Regla práctica:** antes de asumir que "todo debe pasar por el agente",
+  preguntar si esa pantalla/acción es algo que un usuario de banco
+  esperaría poder hacer sin necesidad de escribirle a un chat. Si sí,
+  amerita (o al menos permite) un camino tradicional además del
+  conversacional.
 
 ## 4. El contrato A2UI-lite (esto es lo que NO se rompe)
 
@@ -313,3 +359,8 @@ Para que las ramas se puedan juntar sin fricción:
   (no incremental componente-por-componente como el A2UI completo) — es un
   subconjunto fiel, no la versión con streaming granular. Documentarlo así
   en la entrega si se pregunta.
+- Se aclaró explícitamente (sección 3.3) que el asistente de IA es un
+  agregado sobre una app de banco tradicional, no la app entera: login y
+  acciones bancarias normales (ej. una transferencia por formulario) no
+  pasan por MCP/A2UI, y pueden coexistir con el camino conversacional para
+  la misma acción/dato.
