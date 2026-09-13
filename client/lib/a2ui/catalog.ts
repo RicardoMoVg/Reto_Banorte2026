@@ -3,6 +3,7 @@ import { RastreadorMetas } from '../../components/RastreadorMetas';
 import { TarjetaSaldo } from '../../components/TarjetaSaldo';
 import { ListaTransacciones } from '../../components/ListaTransacciones';
 import { ComparativoGastos } from '../../components/ComparativoGastos';
+import { Confirmacion } from '../../components/Confirmacion';
 
 /**
  * Catálogo A2UI: mapea el `tipo` que manda el backend (ver
@@ -18,4 +19,5 @@ export const catalogoA2ui: Record<string, ComponentType<any>> = {
   TarjetaSaldo,
   ListaTransacciones,
   ComparativoGastos,
+  Confirmacion,
 };
