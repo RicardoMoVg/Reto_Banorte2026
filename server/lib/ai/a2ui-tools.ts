@@ -126,8 +126,11 @@ export function buildA2uiTools(userId: string) {
         'Muestra una lista de movimientos recientes del usuario. Úsala ' +
         'cuando pregunte en qué gastó, sus últimos cargos o sus ingresos.',
       parameters: schemaTransacciones,
-      execute: async ({ titulo, limite, mensajeAgente }) => {
-        const transacciones = await getTransaccionesRecientes(userId, limite ?? 10);
+      execute: async ({ titulo, limite, categoria, mensajeAgente }) => {
+        const transacciones = await getTransaccionesRecientes(userId, {
+          limite: limite ?? 10,
+          categoria,
+        });
 
         return {
           tipo: 'ListaTransacciones' as const,
@@ -154,7 +157,7 @@ export function buildA2uiTools(userId: string) {
         // No existe una tool de MCP para "gasto por categoría" — se
         // agrega aquí en JS a partir de las transacciones, en vez de
         // agregar una tabla/query nueva en mcp-server/ (ver plan, Paso 3c).
-        const transacciones = await getTransaccionesRecientes(userId, 100);
+        const transacciones = await getTransaccionesRecientes(userId, { limite: 100 });
 
         const porCategoria = new Map<string, number>();
         for (const t of transacciones) {

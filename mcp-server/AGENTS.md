@@ -53,3 +53,22 @@ No hace falta correr este paquete para desarrollar — sin `DATABASE_URL` en
 `server/.env`, `mcp-client.ts` usa mocks en memoria automáticamente. Solo
 levanta esto (`npm run seed`, `npm run dev`) si vas a trabajar la capa de
 datos real o a probar el spawn real del proceso MCP.
+
+## Gotchas ya encontrados (no los repitas)
+
+- **`src/db.ts` necesita `import 'dotenv/config'` como PRIMERA línea.** Este
+  paquete es un script de Node plano (no Next.js ni Expo, que cargan `.env`
+  solos) — sin ese import, `process.env.DATABASE_URL` es `undefined`
+  siempre, sin importar qué pongas en `.env`. Síntoma exacto si falta:
+  `SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string`.
+- **Si usas Supabase, usa el connection string del "Session pooler"
+  (`aws-0-<region>.pooler.supabase.com:6543`), no el de "Direct
+  connection"** (`db.<project-ref>.supabase.co:5432`). El directo resuelve
+  solo por IPv6 hoy en día — sin esa conectividad falla con
+  `getaddrinfo ENOENT db.xxx.supabase.co` antes de siquiera intentar la
+  contraseña.
+- El trigger `trg_actualizar_saldo_cuenta` (mantiene `cuentas.saldo` en
+  sincronía con `transacciones`) asume que `transacciones` es *append-only*
+  — solo suma `new.monto` en `INSERT`. Si algún día se permite editar/borrar
+  una transacción ya insertada, este trigger necesita extenderse (revertir
+  el monto viejo, no solo sumar el nuevo).
