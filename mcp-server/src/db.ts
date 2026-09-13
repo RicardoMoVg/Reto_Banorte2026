@@ -1,3 +1,4 @@
+import 'dotenv/config'; // carga mcp-server/.env -- sin esto, DATABASE_URL siempre es undefined
 import { Pool } from 'pg';
 
 /**
