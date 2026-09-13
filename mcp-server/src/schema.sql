@@ -52,8 +52,15 @@ create table if not exists metas (
   usuario_id text not null references usuarios(id),
   titulo text not null,
   monto_actual numeric not null default 0,
-  monto_objetivo numeric not null check (monto_objetivo > 0)
+  monto_objetivo numeric not null check (monto_objetivo > 0),
+  estatus text not null default 'activa' check (estatus in ('activa', 'completada', 'archivada'))
 );
+
+-- migración idempotente para bases ya desplegadas antes de que existiera
+-- `estatus` (archivar = borrado lógico, nunca se hace delete de una meta).
+alter table metas add column if not exists estatus text not null default 'activa';
+alter table metas drop constraint if exists metas_estatus_check;
+alter table metas add constraint metas_estatus_check check (estatus in ('activa', 'completada', 'archivada'));
 
 create table if not exists transacciones (
   id text primary key,
@@ -152,8 +159,13 @@ create table if not exists contactos_pago (
   id text primary key,
   usuario_id text not null references usuarios(id),
   nombre text not null,
-  clabe text
+  clabe text,
+  activo boolean not null default true
 );
+
+-- migración idempotente: `activo` es el borrado lógico de un contacto (no
+-- se hace delete real -- transferencias.contacto_id lo sigue referenciando).
+alter table contactos_pago add column if not exists activo boolean not null default true;
 
 create table if not exists transferencias (
   id text primary key,
@@ -162,9 +174,14 @@ create table if not exists transferencias (
   tipo text not null default 'enviada' check (tipo in ('enviada', 'recibida')), -- 'recibida' = cobro
   monto numeric not null check (monto > 0),
   concepto text,
-  estatus text not null default 'completada' check (estatus in ('pendiente', 'completada', 'fallida')),
+  estatus text not null default 'completada' check (estatus in ('pendiente', 'completada', 'fallida', 'cancelada')),
   fecha timestamptz not null default now()
 );
+
+-- migración idempotente: agrega 'cancelada' como estatus válido (borrado
+-- lógico de una transferencia -- solo aplica a las que estaban 'pendiente').
+alter table transferencias drop constraint if exists transferencias_estatus_check;
+alter table transferencias add constraint transferencias_estatus_check check (estatus in ('pendiente', 'completada', 'fallida', 'cancelada'));
 
 -- ============================================================
 -- 5. Seguros — cotización, coberturas, siniestros

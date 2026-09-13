@@ -27,3 +27,6 @@ agrega detalles internos de ese paquete específico.
   `constitution.md` sección 4.2.
 - Nunca se manda JSX/código ejecutable entre servidor y cliente — solo JSON
   declarativo. Ver `constitution.md` sección 2 y 6.
+- Mensajes de commit cortos y concretos: una línea `tipo: qué se hizo`
+  (`feat:`, `fix:`, `docs:`...) + máximo 2-4 líneas de cuerpo si hace falta
+  contexto. Nada de listas con viñetas ni explicaciones largas.

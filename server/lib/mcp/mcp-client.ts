@@ -19,6 +19,7 @@ export interface Meta {
   porcentaje: number;
   montoActual: number;
   montoObjetivo: number;
+  estatus: 'activa' | 'completada' | 'archivada';
 }
 
 export interface Transaccion {
@@ -45,8 +46,8 @@ if (USE_MOCK) {
 }
 
 const METAS_MOCK: Meta[] = [
-  { id: 'meta-1', titulo: 'Fondo de emergencia', porcentaje: 62, montoActual: 6200, montoObjetivo: 10000 },
-  { id: 'meta-2', titulo: 'Vacaciones diciembre', porcentaje: 30, montoActual: 3000, montoObjetivo: 10000 },
+  { id: 'meta-1', titulo: 'Fondo de emergencia', porcentaje: 62, montoActual: 6200, montoObjetivo: 10000, estatus: 'activa' },
+  { id: 'meta-2', titulo: 'Vacaciones diciembre', porcentaje: 30, montoActual: 3000, montoObjetivo: 10000, estatus: 'activa' },
 ];
 
 const TRANSACCIONES_MOCK: Transaccion[] = [
@@ -133,8 +134,13 @@ async function llamarTool<T>(
   return JSON.parse(bloque.text) as T;
 }
 
-export async function getMetasUsuario(userId: string): Promise<Meta[]> {
-  if (USE_MOCK) return METAS_MOCK;
+export async function getMetasUsuario(
+  userId: string,
+  incluirArchivadas = false,
+): Promise<Meta[]> {
+  if (USE_MOCK) {
+    return incluirArchivadas ? METAS_MOCK : METAS_MOCK.filter((m) => m.estatus !== 'archivada');
+  }
 
   const rows = await llamarTool<
     Array<{
@@ -143,8 +149,9 @@ export async function getMetasUsuario(userId: string): Promise<Meta[]> {
       monto_actual: string | number;
       monto_objetivo: string | number;
       porcentaje: string | number;
+      estatus: Meta['estatus'];
     }>
-  >('get_metas', { userId });
+  >('get_metas', { userId, incluirArchivadas });
 
   return rows.map((m) => ({
     id: m.id,
@@ -152,14 +159,123 @@ export async function getMetasUsuario(userId: string): Promise<Meta[]> {
     porcentaje: Number(m.porcentaje),
     montoActual: Number(m.monto_actual),
     montoObjetivo: Number(m.monto_objetivo),
+    estatus: m.estatus,
   }));
+}
+
+export async function crearMeta(
+  userId: string,
+  titulo: string,
+  montoObjetivo: number,
+  montoInicial = 0,
+): Promise<Meta> {
+  if (USE_MOCK) {
+    const meta: Meta = {
+      id: `meta-mock-${METAS_MOCK.length + 1}`,
+      titulo,
+      montoActual: montoInicial,
+      montoObjetivo,
+      porcentaje: Math.round((montoInicial / montoObjetivo) * 100),
+      estatus: 'activa',
+    };
+    METAS_MOCK.push(meta);
+    return meta;
+  }
+
+  const m = await llamarTool<{
+    id: string;
+    titulo: string;
+    monto_actual: string | number;
+    monto_objetivo: string | number;
+    estatus: Meta['estatus'];
+  }>('crear_meta', { userId, titulo, montoObjetivo, montoInicial });
+
+  const montoActual = Number(m.monto_actual);
+  const montoObjetivoNum = Number(m.monto_objetivo);
+  return {
+    id: m.id,
+    titulo: m.titulo,
+    montoActual,
+    montoObjetivo: montoObjetivoNum,
+    porcentaje: Math.round((montoActual / montoObjetivoNum) * 100),
+    estatus: m.estatus,
+  };
+}
+
+export async function aportarAMeta(metaId: string, monto: number): Promise<Meta | { error: string }> {
+  if (USE_MOCK) {
+    const meta = METAS_MOCK.find((m) => m.id === metaId && m.estatus === 'activa');
+    if (!meta) return { error: 'Meta no encontrada o no está activa.' };
+    meta.montoActual += monto;
+    meta.porcentaje = Math.round((meta.montoActual / meta.montoObjetivo) * 100);
+    if (meta.montoActual >= meta.montoObjetivo) meta.estatus = 'completada';
+    return meta;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; titulo: string; monto_actual: string | number; monto_objetivo: string | number; estatus: Meta['estatus'] }
+  >('aportar_a_meta', { metaId, monto });
+
+  if ('error' in resultado) return resultado;
+
+  const montoActual = Number(resultado.monto_actual);
+  const montoObjetivo = Number(resultado.monto_objetivo);
+  return {
+    id: resultado.id,
+    titulo: resultado.titulo,
+    montoActual,
+    montoObjetivo,
+    porcentaje: Math.round((montoActual / montoObjetivo) * 100),
+    estatus: resultado.estatus,
+  };
+}
+
+export async function archivarMeta(metaId: string): Promise<Meta | { error: string }> {
+  if (USE_MOCK) {
+    const meta = METAS_MOCK.find((m) => m.id === metaId);
+    if (!meta) return { error: 'Meta no encontrada.' };
+    meta.estatus = 'archivada';
+    return meta;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; titulo: string; monto_actual: string | number; monto_objetivo: string | number; estatus: Meta['estatus'] }
+  >('archivar_meta', { metaId });
+
+  if ('error' in resultado) return resultado;
+
+  const montoActual = Number(resultado.monto_actual);
+  const montoObjetivo = Number(resultado.monto_objetivo);
+  return {
+    id: resultado.id,
+    titulo: resultado.titulo,
+    montoActual,
+    montoObjetivo,
+    porcentaje: Math.round((montoActual / montoObjetivo) * 100),
+    estatus: resultado.estatus,
+  };
+}
+
+export interface FiltroTransacciones {
+  limite?: number;
+  categoria?: string;
+  desde?: string;
+  hasta?: string;
 }
 
 export async function getTransaccionesRecientes(
   userId: string,
-  limite = 10,
+  { limite = 10, categoria, desde, hasta }: FiltroTransacciones = {},
 ): Promise<Transaccion[]> {
-  if (USE_MOCK) return TRANSACCIONES_MOCK.slice(0, limite);
+  if (USE_MOCK) {
+    let resultado = TRANSACCIONES_MOCK;
+    if (categoria) resultado = resultado.filter((t) => t.categoria === categoria);
+    if (desde) resultado = resultado.filter((t) => t.fecha >= desde);
+    if (hasta) resultado = resultado.filter((t) => t.fecha <= hasta);
+    return resultado.slice(0, limite);
+  }
 
   const rows = await llamarTool<
     Array<{
@@ -169,7 +285,7 @@ export async function getTransaccionesRecientes(
       categoria: string;
       fecha: string;
     }>
-  >('get_transacciones', { userId, limite });
+  >('get_transacciones', { userId, limite, categoria, desde, hasta });
 
   return rows.map((t) => ({
     id: t.id,
@@ -378,21 +494,64 @@ export interface ContactoPago {
   id: string;
   nombre: string;
   clabe: string | null;
+  activo: boolean;
 }
 
 const CONTACTOS_PAGO_MOCK: ContactoPago[] = [
-  { id: 'contacto-1', nombre: 'María López', clabe: '012180012345678901' },
+  { id: 'contacto-1', nombre: 'María López', clabe: '012180012345678901', activo: true },
 ];
 
-export async function getContactosPago(userId: string): Promise<ContactoPago[]> {
-  if (USE_MOCK) return CONTACTOS_PAGO_MOCK;
+export async function getContactosPago(
+  userId: string,
+  incluirInactivos = false,
+): Promise<ContactoPago[]> {
+  if (USE_MOCK) {
+    return incluirInactivos ? CONTACTOS_PAGO_MOCK : CONTACTOS_PAGO_MOCK.filter((c) => c.activo);
+  }
 
-  const rows = await llamarTool<Array<{ id: string; nombre: string; clabe: string | null }>>(
+  const rows = await llamarTool<Array<{ id: string; nombre: string; clabe: string | null; activo: boolean }>>(
     'get_contactos_pago',
-    { userId },
+    { userId, incluirInactivos },
   );
 
-  return rows.map((c) => ({ id: c.id, nombre: c.nombre, clabe: c.clabe }));
+  return rows.map((c) => ({ id: c.id, nombre: c.nombre, clabe: c.clabe, activo: c.activo }));
+}
+
+export async function crearContactoPago(
+  userId: string,
+  nombre: string,
+  clabe?: string,
+): Promise<ContactoPago> {
+  if (USE_MOCK) {
+    const contacto: ContactoPago = {
+      id: `contacto-mock-${CONTACTOS_PAGO_MOCK.length + 1}`,
+      nombre,
+      clabe: clabe ?? null,
+      activo: true,
+    };
+    CONTACTOS_PAGO_MOCK.push(contacto);
+    return contacto;
+  }
+
+  const c = await llamarTool<{ id: string; nombre: string; clabe: string | null; activo: boolean }>(
+    'crear_contacto_pago',
+    { userId, nombre, clabe },
+  );
+
+  return { id: c.id, nombre: c.nombre, clabe: c.clabe, activo: c.activo };
+}
+
+export async function desactivarContactoPago(
+  contactoId: string,
+): Promise<ContactoPago | { error: string }> {
+  if (USE_MOCK) {
+    const contacto = CONTACTOS_PAGO_MOCK.find((c) => c.id === contactoId);
+    if (!contacto) return { error: 'Contacto no encontrado.' };
+    contacto.activo = false;
+    return contacto;
+  }
+
+  return llamarTool<{ error: string } | ContactoPago>('desactivar_contacto_pago', { contactoId });
 }
 
 export interface Transferencia {
@@ -410,11 +569,22 @@ const TRANSFERENCIAS_MOCK: Transferencia[] = [
   { id: 'transferencia-2', tipo: 'recibida', monto: 300, concepto: 'Pago compartido', estatus: 'completada', fecha: new Date().toISOString(), contacto: 'María López' },
 ];
 
+export interface FiltroTransferencias {
+  limite?: number;
+  tipo?: 'enviada' | 'recibida';
+  estatus?: 'pendiente' | 'completada' | 'fallida' | 'cancelada';
+}
+
 export async function getTransferenciasRecientes(
   userId: string,
-  limite = 10,
+  { limite = 10, tipo, estatus }: FiltroTransferencias = {},
 ): Promise<Transferencia[]> {
-  if (USE_MOCK) return TRANSFERENCIAS_MOCK.slice(0, limite);
+  if (USE_MOCK) {
+    let resultado = TRANSFERENCIAS_MOCK;
+    if (tipo) resultado = resultado.filter((t) => t.tipo === tipo);
+    if (estatus) resultado = resultado.filter((t) => t.estatus === estatus);
+    return resultado.slice(0, limite);
+  }
 
   const rows = await llamarTool<
     Array<{
@@ -426,7 +596,7 @@ export async function getTransferenciasRecientes(
       fecha: string;
       contacto: string | null;
     }>
-  >('get_transferencias', { userId, limite });
+  >('get_transferencias', { userId, limite, tipo, estatus });
 
   return rows.map((t) => ({
     id: t.id,
@@ -437,6 +607,76 @@ export async function getTransferenciasRecientes(
     fecha: t.fecha,
     contacto: t.contacto,
   }));
+}
+
+export async function crearTransferencia(
+  userId: string,
+  contactoId: string,
+  monto: number,
+  concepto?: string,
+  tipo: 'enviada' | 'recibida' = 'enviada',
+): Promise<Transferencia | { error: string }> {
+  if (USE_MOCK) {
+    const contacto = CONTACTOS_PAGO_MOCK.find((c) => c.id === contactoId && c.activo);
+    if (!contacto) return { error: 'Contacto no encontrado, inactivo, o no pertenece al usuario.' };
+
+    const transferencia: Transferencia = {
+      id: `transferencia-mock-${TRANSFERENCIAS_MOCK.length + 1}`,
+      tipo,
+      monto,
+      concepto: concepto ?? null,
+      estatus: 'completada',
+      fecha: new Date().toISOString(),
+      contacto: contacto.nombre,
+    };
+    TRANSFERENCIAS_MOCK.push(transferencia);
+    return transferencia;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; tipo: string; monto: string | number; concepto: string | null; estatus: string; fecha: string }
+  >('crear_transferencia', { userId, contactoId, monto, concepto, tipo });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    tipo: resultado.tipo,
+    monto: Number(resultado.monto),
+    concepto: resultado.concepto,
+    estatus: resultado.estatus,
+    fecha: resultado.fecha,
+    contacto: null,
+  };
+}
+
+export async function cancelarTransferencia(
+  transferenciaId: string,
+): Promise<Transferencia | { error: string }> {
+  if (USE_MOCK) {
+    const transferencia = TRANSFERENCIAS_MOCK.find((t) => t.id === transferenciaId && t.estatus === 'pendiente');
+    if (!transferencia) return { error: 'Transferencia no encontrada o ya no está pendiente.' };
+    transferencia.estatus = 'cancelada';
+    return transferencia;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; tipo: string; monto: string | number; concepto: string | null; estatus: string; fecha: string }
+  >('cancelar_transferencia', { transferenciaId });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    tipo: resultado.tipo,
+    monto: Number(resultado.monto),
+    concepto: resultado.concepto,
+    estatus: resultado.estatus,
+    fecha: resultado.fecha,
+    contacto: null,
+  };
 }
 
 // ============================================================
