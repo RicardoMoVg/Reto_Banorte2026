@@ -41,9 +41,12 @@ etc.). Si sientes que necesitas eso, es una señal de que ese trabajo va en
   emitir contenido.** Un fallo a medio stream no se reintenta (evita
   duplicar contenido ya enviado al cliente). Si agregas un proveedor nuevo
   a la lista `PROVEEDORES` en `route.ts`, respeta ese mismo criterio.
-- **`spawn npx ENOENT` pendiente de verificar en Windows** (ver README) —
-  nunca se ha probado el spawn real del MCP server (todo el desarrollo usó
-  mocks). Si vas a conectar `DATABASE_URL` de verdad, prueba esto primero.
+- **No uses `command: 'npx'` en `StdioMCPTransport`** (ver README). En
+  Windows `npx` es un `.cmd` y `child_process.spawn` no puede ejecutarlo
+  sin `shell: true` (que `StdioConfig` no expone) — truena con
+  `spawn npx ENOENT`. `getTools()` en `mcp-client.ts` invoca
+  `process.execPath` sobre `tsx/dist/cli.mjs` directo; no lo regreses a
+  `npx`.
 - **CORS abierto (`Access-Control-Allow-Origin: '*'`)** en `route.ts` es
   intencional para dev (el cliente RN corre en otro origen). Endurecerlo
   antes de exponer este API fuera de la red local del equipo.
