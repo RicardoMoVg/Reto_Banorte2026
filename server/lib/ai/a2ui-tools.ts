@@ -1,5 +1,10 @@
 import { tool } from 'ai';
 import {
+  getTransferenciasRecientes,
+  getSolicitudesCredito,
+  getPortafolioUsuario,
+  getHabitosFinancieros,
+  getAportacionesProgramadas,
   simularPlanPago,
   getPolizasSeguro,
   getPlanesPago,
@@ -44,6 +49,7 @@ import {
   schemaComparativoGastos,
   schemaTarjetaAccion,
   schemaGrafica,
+  schemaListado,
   schemaPropuestaAhorro,
   schemaConfirmarAccion,
   schemaCrearMeta,
@@ -137,6 +143,18 @@ async function datosReferenciables(userId: string): Promise<Record<string, numbe
   return tabla;
 }
 
+/** Como llamar a cada dominio cuando la lista sale vacia. */
+const ETIQUETA_VACIO: Record<string, string> = {
+  contactos: 'contactos de pago guardados',
+  transferencias: 'transferencias registradas',
+  tarjetas: 'tarjetas de credito',
+  portafolio: 'inversiones',
+  polizas: 'seguros contratados',
+  solicitudes: 'solicitudes de credito',
+  aportaciones: 'aportaciones programadas',
+  habitos: 'habitos registrados',
+};
+
 /**
  * Catálogo de tools del A2UI-lite (API JSON, /app/api/agent/route.ts).
  *
@@ -146,7 +164,123 @@ async function datosReferenciables(userId: string): Promise<Record<string, numbe
  * datos, solo elige qué mostrar y redacta el mensaje de contexto.
  */
 export function buildA2uiTools(userId: string) {
+    /**
+     * Traduce cada dominio del MCP a la forma comun de `ListaDatos`
+     * (principal / secundario / valor / estatus). Vive dentro de
+     * buildA2uiTools porque necesita el `userId` del turno.
+     *
+     * Las cifras se formatean AQUI, no en el componente: el bloque solo
+     * pinta strings (constitution.md 4.2).
+     */
+    async function renglonesDe(fuente: string) {
+      if (fuente === 'contactos') {
+        const contactos = await getContactosPago(userId, {});
+        return contactos.map((c) => ({
+          principal: c.nombre,
+          // La CLABE se muestra enmascarada: no hace falta verla completa
+          // para reconocer a quien le transfieres, y va a pantalla.
+          secundario: c.clabe ? `CLABE ****${c.clabe.slice(-4)}` : 'Sin CLABE registrada',
+          estatus: c.activo ? undefined : 'inactivo',
+        }));
+      }
+
+      if (fuente === 'transferencias') {
+        const transferencias = await getTransferenciasRecientes(userId, {});
+        return transferencias.map((t) => ({
+          principal: t.contacto ?? (t.tipo === 'recibida' ? 'Cobro recibido' : 'Transferencia'),
+          secundario: t.concepto ?? new Date(t.fecha).toLocaleDateString('es-MX'),
+          valor: `${t.tipo === 'recibida' ? '+' : '-'}${formatoMXN.format(t.monto)}`,
+          estatus: t.estatus,
+        }));
+      }
+
+      if (fuente === 'tarjetas') {
+        const tarjetas = await getTarjetasCredito(userId);
+        return tarjetas.map((t) => ({
+          principal: t.alias,
+          secundario: `Limite ${formatoMXN.format(t.limiteCredito)} - tasa ${t.tasaAnual}%`,
+          valor: formatoMXN.format(t.saldoActual),
+        }));
+      }
+
+      if (fuente === 'portafolio') {
+        const posiciones = await getPortafolioUsuario(userId);
+        return posiciones.map((p) => ({
+          principal: p.nombre,
+          secundario: `${p.cantidad} titulos - riesgo ${p.riesgo}`,
+          valor: formatoMXN.format(p.valorInvertido),
+          estatus: p.activa ? undefined : 'cerrada',
+        }));
+      }
+
+      if (fuente === 'polizas') {
+        const polizas = await getPolizasSeguro(userId);
+        return polizas.map((p) => ({
+          principal: p.cobertura,
+          secundario: `Seguro de ${p.tipo}`,
+          valor: `${formatoMXN.format(p.primaMensual)}/mes`,
+          estatus: p.estatus,
+        }));
+      }
+
+      if (fuente === 'solicitudes') {
+        const solicitudes = await getSolicitudesCredito(userId);
+        return solicitudes.map((s) => ({
+          principal: `Credito ${s.tipo}`,
+          secundario: new Date(s.fecha).toLocaleDateString('es-MX'),
+          valor: formatoMXN.format(s.montoSolicitado),
+          estatus: s.estatus,
+        }));
+      }
+
+      if (fuente === 'aportaciones') {
+        const [aportaciones, metas] = await Promise.all([
+          getAportacionesProgramadas(userId, {}),
+          getMetasUsuario(userId),
+        ]);
+        return aportaciones.map((a) => ({
+          principal: metas.find((m) => m.id === a.metaId)?.titulo ?? 'Meta',
+          secundario: `Aportacion ${a.periodicidad}`,
+          valor: formatoMXN.format(a.monto),
+          estatus: a.estatus,
+        }));
+      }
+
+      const habitos = await getHabitosFinancieros(userId);
+      return habitos.map((h) => ({
+        principal: h.habito,
+        secundario: h.rachaDias === 1 ? '1 dia de racha' : `${h.rachaDias} dias de racha`,
+        estatus: h.activo ? undefined : 'inactivo',
+      }));
+    }
+
   return {
+    mostrarListado: tool({
+      description:
+        'Muestra en una lista lo que el usuario TIENE contratado, guardado o ' +
+        'registrado. Usala siempre que pregunte "cuales son mis...", "que ' +
+        'tengo...", "muestrame mis..." sobre: contactos de pago, historial de ' +
+        'transferencias, tarjetas de credito, portafolio de inversion, polizas ' +
+        'de seguro, solicitudes de credito, aportaciones programadas o habitos ' +
+        'financieros. NUNCA respondas que no tienes acceso a estos datos: los ' +
+        'tienes, estan aqui.',
+      parameters: schemaListado,
+      execute: async ({ fuente, titulo, agregarAInicio, mensajeAgente }) => {
+        const items = await renglonesDe(fuente);
+
+        return {
+          tipo: 'ListaDatos' as const,
+          props: {
+            titulo,
+            items,
+            vacio: `Todavia no tienes ${ETIQUETA_VACIO[fuente]}.`,
+            mensajeAgente,
+            agregarAInicio,
+          },
+        };
+      },
+    }),
+
     mostrarProgresoMeta: tool({
       description:
         'Muestra visualmente el progreso de una meta de ahorro o hábito ' +

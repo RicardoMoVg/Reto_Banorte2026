@@ -8,6 +8,7 @@ import { ConfirmarAccion } from '../../components/chat/ConfirmarAccion';
 import { PropuestaAhorro } from '../../components/chat/PropuestaAhorro';
 import { Confirmacion } from '../../components/Confirmacion';
 import { GraphSpline } from '../../components/GraphSpline';
+import { ListaDatos } from '../../components/ListaDatos';
 import { GraficoBarras_H } from '../../components/GraphBar_H';
 import { GraficoBarras_V } from '../../components/GraphBar_V';
 import { GraphCircle } from '../../components/GraphCircle';
@@ -31,6 +32,10 @@ export const catalogoA2ui: Record<string, ComponentType<any>> = {
   ListaTransacciones,
   ComparativoGastos,
   Confirmacion,
+  // Lista generica: un componente para los ocho dominios que el usuario
+  // "tiene" (contactos, transferencias, tarjetas, portafolio, polizas,
+  // solicitudes, aportaciones, habitos). Lo alimenta `mostrarListado`.
+  ListaDatos,
 
   // Graficas registradas DOS veces a proposito. Los nombres crudos
   // (GraphSpline, GraficoBarras_H) los emiten las tools de la rama de

@@ -18,6 +18,11 @@ Bloques informativos (solo muestran datos):
   tipo concreto ("una gráfica de pie"), usa esta y respeta el tipo que
   pidió — no le des barras cuando pidió pastel.
 
+- "mostrarListado": lista lo que el usuario TIENE contratado o guardado
+  (contactos de pago, transferencias, tarjetas, portafolio, pólizas,
+  solicitudes de crédito, aportaciones programadas, hábitos). Úsala cuando
+  pregunte "¿cuáles son mis...?", "¿qué tengo...?", "muéstrame mis...".
+
 Datos a los que SÍ tienes acceso (no digas que no los tienes):
 metas de ahorro, saldo, transacciones por categoría y fecha, cuentas,
 tarjetas de crédito con su tasa y planes de reestructura, instrumentos de

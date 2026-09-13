@@ -516,3 +516,39 @@ export const schemaGrafica = z.object({
     ),
   mensajeAgente: z.string().describe('Insight breve sobre lo que se ve, una linea.'),
 });
+
+/**
+ * Listado generico de lo que el usuario tiene contratado o guardado.
+ *
+ * Una sola tool para ocho dominios: todos comparten la misma forma de
+ * renglon (algo que identifica, un detalle, una cifra, a veces un estado),
+ * asi que no hace falta un componente ni una tool por dominio -- patron de
+ * constitution.md 4.4. El modelo elige QUE listar; el codigo pone los
+ * valores desde el MCP.
+ */
+export const schemaListado = z.object({
+  fuente: z
+    .enum([
+      'contactos',
+      'transferencias',
+      'tarjetas',
+      'portafolio',
+      'polizas',
+      'solicitudes',
+      'aportaciones',
+      'habitos',
+    ])
+    .describe(
+      'Que listar. "contactos": contactos de pago guardados. "transferencias": historial de ' +
+        'envios y cobros. "tarjetas": tarjetas de credito con limite y saldo. "portafolio": ' +
+        'posiciones de inversion. "polizas": seguros contratados y cotizados. "solicitudes": ' +
+        'solicitudes de credito y su estatus. "aportaciones": planes de aportacion programada a ' +
+        'metas. "habitos": habitos financieros y su racha.',
+    ),
+  titulo: z.string().describe('Encabezado de la lista, ej. "Tus contactos guardados".'),
+  agregarAInicio: z
+    .boolean()
+    .optional()
+    .describe('true SOLO si el usuario pidio que quede fijo en su pantalla de inicio.'),
+  mensajeAgente: z.string().describe('Observacion breve sobre la lista, una linea.'),
+});
