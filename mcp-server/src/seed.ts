@@ -59,12 +59,12 @@ async function main() {
   );
 
   await pool.query(
-    `insert into instrumentos (id, nombre, tipo, riesgo, rendimiento_anual_estimado) values
-       ('inst-1', 'Fondo Banorte Renta Variable', 'fondo', 'alto', 11.5),
-       ('inst-2', 'CETES 28 días', 'cetes', 'bajo', 10.8),
-       ('inst-3', 'ETF S&P 500', 'etf', 'medio', 9.2),
-       ('inst-4', 'Dólar estadounidense (USD)', 'divisa', 'medio', 4.5),
-       ('inst-5', 'Euro (EUR)', 'divisa', 'medio', 3.8)
+    `insert into instrumentos (id, nombre, tipo, riesgo, rendimiento_anual_estimado, precio_base) values
+       ('inst-1', 'Fondo Banorte Renta Variable', 'fondo', 'alto', 11.5, 25.50),
+       ('inst-2', 'CETES 28 días', 'cetes', 'bajo', 10.8, 10.00),
+       ('inst-3', 'ETF S&P 500', 'etf', 'medio', 9.2, 45.00),
+       ('inst-4', 'Dólar estadounidense (USD)', 'divisa', 'medio', 4.5, 18.50),
+       ('inst-5', 'Euro (EUR)', 'divisa', 'medio', 3.8, 20.00)
      on conflict (id) do nothing`,
   );
 

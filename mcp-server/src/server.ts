@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { pool } from './db.js';
+import { precioSimulado } from './precios.js';
 
 /**
  * Servidor MCP de Mosaico. Expone datos financieros (Postgres) como "tools"
@@ -393,15 +394,60 @@ server.tool(
     }
 
     const { rows } = await pool.query(
-      `select id, nombre, tipo, riesgo, rendimiento_anual_estimado
+      `select id, nombre, tipo, riesgo, rendimiento_anual_estimado, precio_base
        from instrumentos
        where ${condiciones.join(' and ')}
        order by rendimiento_anual_estimado desc`,
       valores,
     );
 
+    const conPrecio = rows.map((r) => ({
+      ...r,
+      precio_actual: precioSimulado(Number(r.precio_base), r.riesgo, r.id),
+    }));
+
     return {
-      content: [{ type: 'text', text: JSON.stringify(rows) }],
+      content: [{ type: 'text', text: JSON.stringify(conPrecio) }],
+    };
+  },
+);
+
+server.tool(
+  'get_historial_precio',
+  'Obtiene la serie de precio simulado de un instrumento entre dos fechas, para graficar su tendencia. No es historial guardado -- se recalcula con la misma fórmula que get_instrumentos, por eso funciona igual hacia el pasado.',
+  {
+    instrumentoId: z.string().describe('Id del instrumento'),
+    desde: z.string().describe('Fecha/hora de inicio (ISO 8601)'),
+    hasta: z.string().describe('Fecha/hora de fin (ISO 8601)'),
+    puntos: z.number().int().positive().max(100).default(20).describe('Cuántos puntos regresar entre desde y hasta'),
+  },
+  async ({ instrumentoId, desde, hasta, puntos }) => {
+    const { rows } = await pool.query(
+      `select precio_base, riesgo from instrumentos where id = $1`,
+      [instrumentoId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Instrumento no encontrado.' }) }],
+      };
+    }
+
+    const { precio_base, riesgo } = rows[0];
+    const inicio = new Date(desde).getTime();
+    const fin = new Date(hasta).getTime();
+    const paso = puntos > 1 ? (fin - inicio) / (puntos - 1) : 0;
+
+    const serie = Array.from({ length: puntos }, (_, i) => {
+      const fecha = new Date(inicio + paso * i);
+      return {
+        fecha: fecha.toISOString(),
+        precio: precioSimulado(Number(precio_base), riesgo, instrumentoId, fecha),
+      };
+    });
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(serie) }],
     };
   },
 );

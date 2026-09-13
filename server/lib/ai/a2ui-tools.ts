@@ -11,8 +11,10 @@ import {
   getCuentasUsuario,
   crearTransaccion,
   actualizarPerfilInversion,
+  getInstrumentos,
   comprarPosicion,
   venderPosicion,
+  getHistorialPrecio,
   getTarjetasCredito,
   crearCompraTarjeta,
   diferirAMsi,
@@ -43,9 +45,11 @@ import {
   schemaCrearAportacionProgramada,
   schemaCancelarAportacionProgramada,
   schemaCrearTransaccion,
+  schemaMostrarInstrumentos,
   schemaActualizarPerfilInversion,
   schemaComprarPosicion,
   schemaVenderPosicion,
+  schemaHistorialPrecio,
   schemaCrearCompraTarjeta,
   schemaDiferirAMsi,
   schemaCrearSolicitudCredito,
@@ -310,6 +314,26 @@ export function buildA2uiTools(userId: string) {
       },
     }),
 
+    mostrarInstrumentos: tool({
+      description:
+        'Muestra el catálogo de instrumentos de inversión disponibles (no solo los que ya tiene el ' +
+        'usuario), con su precio actual. Úsala cuando pregunte qué opciones hay para invertir, antes de ' +
+        'comprar/vender algo.',
+      parameters: schemaMostrarInstrumentos,
+      execute: async ({ tipo, riesgo, titulo, mensajeAgente }) => {
+        const instrumentos = await getInstrumentos({ tipo, riesgo });
+
+        return {
+          tipo: 'GraficoBarras_H' as const,
+          props: {
+            titulo,
+            categorias: instrumentos.map((i) => ({ nombre: i.nombre, monto: i.precioActual })),
+            mensajeAgente,
+          },
+        };
+      },
+    }),
+
     actualizarPerfilInversion: tool({
       description: 'Actualiza el perfil de inversión del usuario (tolerancia al riesgo y horizonte).',
       parameters: schemaActualizarPerfilInversion,
@@ -359,6 +383,32 @@ export function buildA2uiTools(userId: string) {
             titulo: 'Venta realizada',
             mensaje: resultado.activa ? 'Venta parcial registrada.' : 'Posición vendida por completo.',
             exito: true,
+            mensajeAgente,
+          },
+        };
+      },
+    }),
+
+    mostrarHistorialPrecio: tool({
+      description:
+        'Muestra una gráfica de cómo se ha movido el precio de un instrumento (ej. un dólar, un fondo) en el ' +
+        'tiempo. Úsala cuando pregunte cómo ha ido/se ha movido/ha subido o bajado un instrumento.',
+      parameters: schemaHistorialPrecio,
+      execute: async ({ instrumentoId, horasHaciaAtras, titulo, mensajeAgente }) => {
+        const ahora = new Date();
+        const desde = new Date(ahora.getTime() - (horasHaciaAtras ?? 24) * 60 * 60 * 1000);
+
+        const resultado = await getHistorialPrecio(instrumentoId, desde.toISOString(), ahora.toISOString(), 20);
+        if ('error' in resultado) return { error: resultado.error };
+
+        return {
+          tipo: 'GraphSpline' as const,
+          props: {
+            titulo,
+            categorias: resultado.map((p) => ({
+              nombre: new Date(p.fecha).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+              monto: p.precio,
+            })),
             mensajeAgente,
           },
         };

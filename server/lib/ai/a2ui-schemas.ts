@@ -115,6 +115,13 @@ export const schemaCrearTransaccion = z.object({
 
 // --- Inversiones ---
 
+export const schemaMostrarInstrumentos = z.object({
+  tipo: z.enum(['accion', 'fondo', 'cetes', 'etf', 'divisa']).optional().describe('Filtra por tipo de instrumento.'),
+  riesgo: z.enum(['bajo', 'medio', 'alto']).optional().describe('Filtra por nivel de riesgo.'),
+  titulo: z.string().describe('Encabezado, ej. "Instrumentos disponibles".'),
+  mensajeAgente: z.string().describe('Mensaje breve, una línea.'),
+});
+
 export const schemaActualizarPerfilInversion = z.object({
   toleranciaRiesgo: z.enum(['conservador', 'moderado', 'agresivo']),
   horizonteAnios: z.number().int().positive(),
@@ -131,6 +138,18 @@ export const schemaComprarPosicion = z.object({
 export const schemaVenderPosicion = z.object({
   posicionId: z.string().describe('Id de la posición a vender.'),
   cantidad: z.number().positive().optional().describe('Cantidad a vender. Si no se especifica, se vende toda la posición.'),
+  mensajeAgente: z.string().describe('Mensaje breve, una línea.'),
+});
+
+export const schemaHistorialPrecio = z.object({
+  instrumentoId: z.string().describe('Id del instrumento cuyo precio se quiere graficar.'),
+  horasHaciaAtras: z
+    .number()
+    .positive()
+    .max(24 * 30)
+    .optional()
+    .describe('Cuántas horas hacia atrás mostrar, ej. 24 para "el último día", 168 para "la última semana". Si no se especifica, se usan 24.'),
+  titulo: z.string().describe('Encabezado de la gráfica, ej. "Tendencia del dólar".'),
   mensajeAgente: z.string().describe('Mensaje breve, una línea.'),
 });
 

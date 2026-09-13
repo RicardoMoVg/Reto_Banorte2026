@@ -4,6 +4,8 @@ import { TarjetaSaldo } from '../../components/TarjetaSaldo';
 import { ListaTransacciones } from '../../components/ListaTransacciones';
 import { ComparativoGastos } from '../../components/ComparativoGastos';
 import { Confirmacion } from '../../components/Confirmacion';
+import { GraphSpline } from '../../components/GraphSpline';
+import { GraficoBarras_H } from '../../components/GraphBar_H';
 
 /**
  * Catálogo A2UI: mapea el `tipo` que manda el backend (ver
@@ -20,4 +22,6 @@ export const catalogoA2ui: Record<string, ComponentType<any>> = {
   ListaTransacciones,
   ComparativoGastos,
   Confirmacion,
+  GraphSpline,
+  GraficoBarras_H,
 };
