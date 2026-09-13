@@ -32,11 +32,22 @@ export async function POST(req: Request) {
     return jsonResponse({ error: error?.message ?? 'No se pudo registrar el usuario.' }, { status: 400 });
   }
 
-  const perfil = await crearUsuario(data.user.id, nombre?.trim() || email.split('@')[0]);
+  // Handle sugerido a partir del correo -- el usuario lo puede cambiar
+  // después desde "Editar perfil".
+  const handle = `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '')}`;
+  const perfil = await crearUsuario(data.user.id, nombre?.trim() || email.split('@')[0], handle);
 
   return jsonResponse(
     {
-      usuario: { id: data.user.id, email: data.user.email, nombre: perfil.nombre },
+      usuario: {
+        id: data.user.id,
+        email: data.user.email,
+        nombre: perfil.nombre,
+        usuario: perfil.usuario,
+        telefono: perfil.telefono,
+        fechaNacimiento: perfil.fechaNacimiento,
+        creadoEn: perfil.creadoEn,
+      },
       // Si el proyecto de Supabase pide confirmar el correo, session viene
       // null hasta que el usuario confirme -- el cliente debe manejar
       // ambos casos.
