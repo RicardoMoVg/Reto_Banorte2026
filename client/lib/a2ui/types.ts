@@ -16,5 +16,12 @@ export type EventoA2ui = EventoTexto | EventoSurface | EventoDone | EventoError;
  * nunca requiere tocar este archivo.
  */
 export type Mensaje =
-  | { id: string; tipo: 'texto'; rol: 'user' | 'asistente'; contenido: string }
+  | {
+      id: string;
+      tipo: 'texto';
+      rol: 'user' | 'asistente';
+      contenido: string;
+      /** Falla de red o del agente: la UI lo pinta distinto a una respuesta. */
+      esError?: boolean;
+    }
   | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: string; props: Record<string, unknown> };

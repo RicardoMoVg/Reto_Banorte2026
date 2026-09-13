@@ -70,7 +70,13 @@ export function useAgentStream(apiUrl: string) {
           } else if (evento.type === 'error') {
             setMensajes((prev) => [
               ...prev,
-              { id: uid(), tipo: 'texto', rol: 'asistente', contenido: `⚠️ ${evento.message}` },
+              {
+                id: uid(),
+                tipo: 'texto',
+                rol: 'asistente',
+                contenido: evento.message,
+                esError: true,
+              },
             ]);
           }
         }
@@ -78,12 +84,28 @@ export function useAgentStream(apiUrl: string) {
     } catch (err) {
       setMensajes((prev) => [
         ...prev,
-        { id: uid(), tipo: 'texto', rol: 'asistente', contenido: `⚠️ Error de red: ${String(err)}` },
+        {
+          id: uid(),
+          tipo: 'texto',
+          rol: 'asistente',
+          contenido: `Error de red: ${String(err)}`,
+          esError: true,
+        },
       ]);
     } finally {
       setCargando(false);
     }
   }
 
-  return { mensajes, cargando, enviar };
+  /**
+   * Borra la conversación en memoria. Hoy el historial solo vive aquí (se
+   * pierde al recargar); cuando se agregue SQLite local — constitution.md
+   * 3.1, el historial NUNCA sube al servidor — esta función es también el
+   * lugar donde se borrará de disco.
+   */
+  function limpiar() {
+    setMensajes([]);
+  }
+
+  return { mensajes, cargando, enviar, limpiar };
 }
