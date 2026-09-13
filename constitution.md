@@ -108,8 +108,15 @@ no se agrega un store de conversaciones en el servidor como atajo.
 
 ### 3.2 Rehidratación del dashboard — receta, nunca snapshot
 
-Cuando el usuario "ancla" un bloque al dashboard (Paso 5, pendiente en
-`client/`), la tentación es guardar el resultado ya resuelto (ej.
+**Implementado**: `mcp-server/` expone `get_dashboard_widgets`/
+`anclar_widget`/`desanclar_widget`; `server/app/api/dashboard/` (GET/POST) y
+`server/app/api/dashboard/desanclar/` los usan para rehidratar y
+anclar/desanclar; `client/lib/a2ui/TableroProvider.tsx` hidrata al iniciar
+sesión y persiste al anclar/desanclar (best-effort — si el POST falla, el
+widget se queda solo en memoria para esa sesión).
+
+Cuando el usuario "ancla" un bloque al dashboard, la tentación es guardar
+el resultado ya resuelto (ej.
 `{titulo: "Fondo de emergencia", porcentaje: 62}`). **No se hace así**: al
 volver a abrir la app días después, ese 62% puede ya ser falso — un dato
 financiero desactualizado, aunque nadie lo haya inventado.
@@ -185,10 +192,17 @@ válidos, no se agregan otros sin actualizar este documento:
 
 ```
 {"type":"text","content":"..."}
-{"type":"surface","tipo":"<NombreComponente>","props":{...}}
+{"type":"surface","tipo":"<NombreComponente>","props":{...},"tool":"<nombreTool>","parametros":{...}}
 {"type":"done"}
 {"type":"error","message":"..."}
 ```
+
+`tool`/`parametros` en un evento `surface` son opcionales y llevan la
+receta de la sección 3.2: qué tool de `a2ui-tools.ts` y con qué argumentos
+produjo ese bloque (`part.toolName`/`part.args` del stream de la AI SDK).
+El cliente los guarda junto al bloque para poder anclarlo con algo real que
+persistir — sin ellos, "anclar" no tenía qué mandarle a
+`dashboard_widgets`.
 
 ### 4.2 Contrato de una tool (`server/lib/ai/a2ui-tools.ts`)
 

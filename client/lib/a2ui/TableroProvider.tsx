@@ -1,4 +1,6 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { anclarWidget as anclarWidgetApi, desanclarWidget as desanclarWidgetApi, getDashboard } from '../api/rest';
+import { useSesion } from '../sesion/SesionProvider';
 
 /** Qué tanto ocupa un widget a lo ancho del tablero. */
 export type AnchoBloque = 'completo' | 'medio';
@@ -138,13 +140,18 @@ function moverEnLista(lista: BloqueAnclado[], id: string, movimiento: Movimiento
  * componente lo aplica al montarse — el servidor sigue sin saber nada del
  * estado del cliente, que es lo que exige `constitution.md` 3.1.
  *
- * ⚠️ Vive en memoria: se pierde al recargar. El destino es la tabla
- * `dashboard_widgets` (ya existe en Postgres con la forma correcta), pero
- * `mcp-server/` todavía no expone tools para leerla ni escribirla. Cuando
- * existan, `anclar`/`desanclar`/`mover`/`redimensionar` las llaman y este
- * provider se hidrata al arrancar; las ventanas no cambian.
+ * Se hidrata desde `dashboard_widgets` (vía `GET /api/dashboard`) al abrir
+ * sesión: el servidor vuelve a ejecutar la tool de cada widget -- nunca
+ * regresa el valor que se guardó al anclar (constitution.md 3.2, "receta,
+ * no snapshot"). `anclar`/`desanclar` persisten ahí mismo, best-effort: si
+ * el POST falla, el widget se queda en memoria para esta sesión igual que
+ * antes, simplemente no sobrevive a un recargo.
+ *
+ * `mover`/`redimensionar`/`aplicarAjuste` siguen solo en memoria: layout no
+ * tiene endpoint propio todavía.
  */
 export function TableroProvider({ children }: { children: ReactNode }) {
+  const { sesion } = useSesion();
   const [bloques, setBloques] = useState<BloqueAnclado[]>([]);
 
   /**
@@ -163,6 +170,37 @@ export function TableroProvider({ children }: { children: ReactNode }) {
   const bloquesRef = useRef<BloqueAnclado[]>([]);
   bloquesRef.current = bloques;
 
+  // Rehidratación al iniciar sesión (constitution.md 3.2): sin sesión no hay
+  // `usuarioId` con qué pedir el tablero, así que se limpia en vez de dejar
+  // el de la sesión anterior. Best-effort -- si el fetch falla, el usuario
+  // simplemente arranca con el tablero vacío en vez de trabado.
+  useEffect(() => {
+    if (!sesion) {
+      setBloques([]);
+      return;
+    }
+    let vigente = true;
+    getDashboard()
+      .then(({ widgets }) => {
+        if (!vigente) return;
+        setBloques(
+          widgets.map((w) => ({
+            id: w.id,
+            nombre: w.nombre,
+            props: w.props,
+            tool: w.tool,
+            parametros: w.parametros,
+            ancho: w.ancho,
+            lado: w.lado,
+          })),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      vigente = false;
+    };
+  }, [sesion]);
+
   const anclar = useCallback((bloque: BloqueAnclado) => {
     setBloques((previo) =>
       // Sin esta guarda, tocar dos veces "Agregar" duplica la tarjeta.
@@ -170,10 +208,27 @@ export function TableroProvider({ children }: { children: ReactNode }) {
         ? previo
         : [{ ancho: 'completo' as const, lado: 'izquierda' as const, ...bloque }, ...previo],
     );
+
+    // Best-effort: solo hay receta que guardar si el bloque vino de una
+    // tool (ver el comentario de `tool`/`parametros` arriba). Si el POST
+    // falla, el widget se queda anclado igual para esta sesión.
+    if (bloque.tool) {
+      const mensajeAgente = typeof bloque.props.mensajeAgente === 'string' ? bloque.props.mensajeAgente : undefined;
+      anclarWidgetApi({
+        id: bloque.id,
+        componente: bloque.nombre,
+        tool: bloque.tool,
+        parametros: bloque.parametros ?? {},
+        mensajeAgente,
+        ancho: bloque.ancho ?? 'completo',
+        lado: bloque.lado ?? 'izquierda',
+      }).catch(() => {});
+    }
   }, []);
 
   const desanclar = useCallback((id: string) => {
     setBloques((previo) => previo.filter((b) => b.id !== id));
+    desanclarWidgetApi(id).catch(() => {});
   }, []);
 
   const mover = useCallback((id: string, movimiento: Movimiento) => {

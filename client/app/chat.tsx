@@ -93,7 +93,7 @@ export default function Chat() {
                   <SurfaceRenderer mensaje={m} />
                   {m.props.agregarAInicio === true ? (
                     <PropuestaDeAnclaje
-                      bloque={{ id: m.id, nombre: m.nombre, props: m.props }}
+                      bloque={{ id: m.id, nombre: m.nombre, props: m.props, tool: m.tool, parametros: m.parametros }}
                     />
                   ) : null}
                 </View>

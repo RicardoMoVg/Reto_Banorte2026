@@ -99,6 +99,51 @@ export function logout(accessToken: string, refreshToken: string) {
   });
 }
 
+export interface WidgetDashboardApi {
+  id: string;
+  nombre: string;
+  props: Record<string, unknown>;
+  tool: string;
+  parametros: Record<string, unknown>;
+  mensajeAgente: string | null;
+  orden: number;
+  ancho: 'completo' | 'medio';
+  lado: 'izquierda' | 'derecha';
+}
+
+/**
+ * Rehidratación del tablero (constitution.md 3.2): trae los widgets
+ * anclados ya resueltos con dato fresco -- el servidor re-ejecuta la tool
+ * de cada uno, no regresa el valor que se guardó al anclar.
+ */
+export function getDashboard() {
+  return pedir<{ widgets: WidgetDashboardApi[] }>('/api/dashboard');
+}
+
+export interface AnclarWidgetInput {
+  id: string;
+  componente: string;
+  tool: string;
+  parametros: Record<string, unknown>;
+  mensajeAgente?: string;
+  ancho?: 'completo' | 'medio';
+  lado?: 'izquierda' | 'derecha';
+}
+
+export function anclarWidget(datos: AnclarWidgetInput) {
+  return pedir<{ widget: unknown }>('/api/dashboard', {
+    method: 'POST',
+    body: JSON.stringify(datos),
+  });
+}
+
+export function desanclarWidget(id: string) {
+  return pedir<{ id: string }>('/api/dashboard/desanclar', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  });
+}
+
 export interface TransaccionApi {
   id: string;
   descripcion: string;

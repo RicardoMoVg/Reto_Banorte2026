@@ -3,7 +3,14 @@
  * server/app/api/agent/route.ts — ver constitution.md sección 4.1).
  */
 export type EventoTexto = { type: 'text'; content: string };
-export type EventoSurface = { type: 'surface'; tipo: string; props: Record<string, unknown> };
+export type EventoSurface = {
+  type: 'surface';
+  tipo: string;
+  props: Record<string, unknown>;
+  /** La receta para rehidratar este bloque sin el modelo -- ver constitution.md 3.2/4.1. */
+  tool?: string;
+  parametros?: Record<string, unknown>;
+};
 export type EventoDone = { type: 'done' };
 export type EventoError = { type: 'error'; message: string };
 
@@ -24,4 +31,12 @@ export type Mensaje =
       /** Falla de red o del agente: la UI lo pinta distinto a una respuesta. */
       esError?: boolean;
     }
-  | { id: string; tipo: 'surface'; rol: 'asistente'; nombre: string; props: Record<string, unknown> };
+  | {
+      id: string;
+      tipo: 'surface';
+      rol: 'asistente';
+      nombre: string;
+      props: Record<string, unknown>;
+      tool?: string;
+      parametros?: Record<string, unknown>;
+    };

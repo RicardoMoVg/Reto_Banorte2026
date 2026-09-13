@@ -32,8 +32,21 @@ create table if not exists dashboard_widgets (
   parametros jsonb not null default '{}', -- argumentos que el modelo hubiera elegido, ej. {"metaId":"meta-1"}
   mensaje_agente text,      -- texto de contexto -- este sí se congela, no es un dato financiero
   orden integer not null default 0,
+  -- chrome del TABLERO (client/lib/a2ui/TableroProvider.tsx), no del bloque
+  -- -- igual que ese provider, ningún componente A2UI sabe que existen.
+  ancho text not null default 'completo' check (ancho in ('completo', 'medio')),
+  lado text not null default 'izquierda' check (lado in ('izquierda', 'derecha')),
   creado_en timestamptz not null default now()
 );
+
+-- migración idempotente para bases ya desplegadas antes de que existieran
+-- `ancho`/`lado`.
+alter table dashboard_widgets add column if not exists ancho text not null default 'completo';
+alter table dashboard_widgets drop constraint if exists dashboard_widgets_ancho_check;
+alter table dashboard_widgets add constraint dashboard_widgets_ancho_check check (ancho in ('completo', 'medio'));
+alter table dashboard_widgets add column if not exists lado text not null default 'izquierda';
+alter table dashboard_widgets drop constraint if exists dashboard_widgets_lado_check;
+alter table dashboard_widgets add constraint dashboard_widgets_lado_check check (lado in ('izquierda', 'derecha'));
 
 -- ============================================================
 -- 1. Banca personal — cuentas, movimientos, control de gasto
