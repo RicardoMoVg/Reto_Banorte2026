@@ -134,6 +134,18 @@ export const schemaVenderPosicion = z.object({
   mensajeAgente: z.string().describe('Mensaje breve, una línea.'),
 });
 
+export const schemaHistorialPrecio = z.object({
+  instrumentoId: z.string().describe('Id del instrumento cuyo precio se quiere graficar.'),
+  horasHaciaAtras: z
+    .number()
+    .positive()
+    .max(24 * 30)
+    .optional()
+    .describe('Cuántas horas hacia atrás mostrar, ej. 24 para "el último día", 168 para "la última semana". Si no se especifica, se usan 24.'),
+  titulo: z.string().describe('Encabezado de la gráfica, ej. "Tendencia del dólar".'),
+  mensajeAgente: z.string().describe('Mensaje breve, una línea.'),
+});
+
 // --- Crédito ---
 
 export const schemaCrearCompraTarjeta = z.object({

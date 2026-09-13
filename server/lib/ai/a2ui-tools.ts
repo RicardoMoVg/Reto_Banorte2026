@@ -13,6 +13,7 @@ import {
   actualizarPerfilInversion,
   comprarPosicion,
   venderPosicion,
+  getHistorialPrecio,
   getTarjetasCredito,
   crearCompraTarjeta,
   diferirAMsi,
@@ -46,6 +47,7 @@ import {
   schemaActualizarPerfilInversion,
   schemaComprarPosicion,
   schemaVenderPosicion,
+  schemaHistorialPrecio,
   schemaCrearCompraTarjeta,
   schemaDiferirAMsi,
   schemaCrearSolicitudCredito,
@@ -359,6 +361,32 @@ export function buildA2uiTools(userId: string) {
             titulo: 'Venta realizada',
             mensaje: resultado.activa ? 'Venta parcial registrada.' : 'Posición vendida por completo.',
             exito: true,
+            mensajeAgente,
+          },
+        };
+      },
+    }),
+
+    mostrarHistorialPrecio: tool({
+      description:
+        'Muestra una gráfica de cómo se ha movido el precio de un instrumento (ej. un dólar, un fondo) en el ' +
+        'tiempo. Úsala cuando pregunte cómo ha ido/se ha movido/ha subido o bajado un instrumento.',
+      parameters: schemaHistorialPrecio,
+      execute: async ({ instrumentoId, horasHaciaAtras, titulo, mensajeAgente }) => {
+        const ahora = new Date();
+        const desde = new Date(ahora.getTime() - (horasHaciaAtras ?? 24) * 60 * 60 * 1000);
+
+        const resultado = await getHistorialPrecio(instrumentoId, desde.toISOString(), ahora.toISOString(), 20);
+        if ('error' in resultado) return { error: resultado.error };
+
+        return {
+          tipo: 'GraphSpline' as const,
+          props: {
+            titulo,
+            categorias: resultado.map((p) => ({
+              nombre: new Date(p.fecha).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+              monto: p.precio,
+            })),
             mensajeAgente,
           },
         };
