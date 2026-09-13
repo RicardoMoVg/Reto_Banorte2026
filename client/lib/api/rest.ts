@@ -30,6 +30,11 @@ export function fijarToken(nuevo: string | null) {
   token = nuevo;
 }
 
+/** Para el fetch en streaming de `useAgentStream` (`expo/fetch`), que no pasa por `pedir()`. */
+export function obtenerToken(): string | null {
+  return token;
+}
+
 export class ErrorApi extends Error {
   constructor(
     mensaje: string,

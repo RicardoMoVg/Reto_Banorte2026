@@ -4,6 +4,8 @@ import { openai } from '@ai-sdk/openai';
 import { buildA2uiTools, type WidgetTablero } from '@/lib/ai/a2ui-tools';
 import { SYSTEM_PROMPT } from '@/lib/ai/system-prompt';
 import { esEjecutable, ejecutar, type Ejecucion } from '@/lib/ai/ejecutables';
+import { requireUsuario } from '@/lib/auth/supabase';
+import { CORS_HEADERS } from '@/lib/http/cors';
 
 export const runtime = 'nodejs';
 
@@ -11,21 +13,11 @@ export const runtime = 'nodejs';
  * API JSON del A2UI-lite — puerta de entrada para el cliente RN (y para
  * cualquier otro cliente que quiera hablar el protocolo NDJSON).
  *
- * Sin auth: userId fijo a 'demo-user', el mismo que siembra
- * mcp-server/src/seed.ts y usan los mocks de lib/mcp/mcp-client.ts.
+ * El userId sale de `requireUsuario` (el token de Supabase Auth que manda
+ * el cliente), igual que el resto de endpoints -- antes estaba fijo a
+ * 'demo-user' sin importar quién hubiera iniciado sesión, así que
+ * cualquier usuario real leía y escribía los datos de demo-user.
  */
-const USER_ID = 'demo-user';
-
-/**
- * CORS abierto: en dev, el cliente RN corre en otro origen (Expo web en su
- * propio puerto; la app nativa no aplica CORS pero no estorba tenerlo).
- * Endurecer/quitar antes de producción si el API queda expuesto público.
- */
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
 
 export function OPTIONS() {
   return new Response(null, { headers: CORS_HEADERS });
@@ -155,6 +147,7 @@ function contextoDelTablero(widgets: WidgetTablero[]) {
 }
 
 async function* generarEventos(
+  userId: string,
   message: string,
   historial: unknown,
   esDecision: boolean,
@@ -170,7 +163,7 @@ async function* generarEventos(
    * la tool le gana al system prompt. Pedirle por prompt que no lo haga es
    * apostar a que obedezca; quitarle la herramienta lo vuelve imposible.
    */
-  const tools = esDecision ? undefined : buildA2uiTools(USER_ID, tablero);
+  const tools = esDecision ? undefined : buildA2uiTools(userId, tablero);
   const turnosPrevios = aMensajesDelModelo(historial);
 
   for (let i = 0; i < PROVEEDORES.length; i++) {
@@ -265,9 +258,9 @@ async function* generarEventos(
  * preguntarle al modelo abriria la puerta a que se equivoque de contacto o
  * de cifra justo en el paso que mueve el dinero.
  */
-async function* generarEjecucion(ejecucion: Ejecucion): AsyncGenerator<EventoA2ui> {
+async function* generarEjecucion(userId: string, ejecucion: Ejecucion): AsyncGenerator<EventoA2ui> {
   try {
-    const salida = await ejecutar(USER_ID, ejecucion);
+    const salida = await ejecutar(userId, ejecucion);
     if ('error' in salida) {
       yield { type: 'text', content: salida.error };
       return;
@@ -280,6 +273,9 @@ async function* generarEjecucion(ejecucion: Ejecucion): AsyncGenerator<EventoA2u
 }
 
 export async function POST(req: Request) {
+  const auth = await requireUsuario(req);
+  if (auth instanceof Response) return auth;
+
   const { message, historial, esDecision, ejecucion, tablero } = (await req.json()) as {
     message: string;
     historial?: unknown;
@@ -302,11 +298,12 @@ export async function POST(req: Request) {
         // blanca de lib/ai/ejecutables.ts: el nombre lo manda el cliente,
         // y sin acotarlo esto seria "ejecuta lo que te pidan por HTTP".
         if (ejecucion && esEjecutable(ejecucion.tool)) {
-          for await (const evento of generarEjecucion(ejecucion)) {
+          for await (const evento of generarEjecucion(auth.id, ejecucion)) {
             enviar(evento);
           }
         } else {
           for await (const evento of generarEventos(
+            auth.id,
             message,
             historial,
             esDecision === true,
