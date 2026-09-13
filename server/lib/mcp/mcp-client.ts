@@ -374,6 +374,45 @@ export async function crearTransaccion(
 // Inversiones
 // ============================================================
 
+export interface Instrumento {
+  id: string;
+  nombre: string;
+  tipo: string;
+  riesgo: string;
+  rendimientoAnualEstimado: number;
+}
+
+const INSTRUMENTOS_MOCK: Instrumento[] = [
+  { id: 'inst-1', nombre: 'Fondo Banorte Renta Variable', tipo: 'fondo', riesgo: 'alto', rendimientoAnualEstimado: 11.5 },
+  { id: 'inst-2', nombre: 'CETES 28 días', tipo: 'cetes', riesgo: 'bajo', rendimientoAnualEstimado: 10.8 },
+  { id: 'inst-3', nombre: 'ETF S&P 500', tipo: 'etf', riesgo: 'medio', rendimientoAnualEstimado: 9.2 },
+];
+
+export async function getInstrumentos(
+  opciones: { tipo?: string; riesgo?: string } = {},
+): Promise<Instrumento[]> {
+  const { tipo, riesgo } = opciones;
+
+  if (USE_MOCK) {
+    let resultado = INSTRUMENTOS_MOCK;
+    if (tipo) resultado = resultado.filter((i) => i.tipo === tipo);
+    if (riesgo) resultado = resultado.filter((i) => i.riesgo === riesgo);
+    return resultado;
+  }
+
+  const rows = await llamarTool<
+    Array<{ id: string; nombre: string; tipo: string; riesgo: string; rendimiento_anual_estimado: string | number }>
+  >('get_instrumentos', { tipo, riesgo });
+
+  return rows.map((i) => ({
+    id: i.id,
+    nombre: i.nombre,
+    tipo: i.tipo,
+    riesgo: i.riesgo,
+    rendimientoAnualEstimado: Number(i.rendimiento_anual_estimado),
+  }));
+}
+
 export interface PerfilInversion {
   toleranciaRiesgo: string;
   horizonteAnios: number;
@@ -393,6 +432,25 @@ export async function getPerfilInversion(userId: string): Promise<PerfilInversio
   return { toleranciaRiesgo: row.tolerancia_riesgo, horizonteAnios: row.horizonte_anios };
 }
 
+export async function actualizarPerfilInversion(
+  userId: string,
+  toleranciaRiesgo: string,
+  horizonteAnios: number,
+): Promise<PerfilInversion> {
+  if (USE_MOCK) {
+    PERFIL_INVERSION_MOCK.toleranciaRiesgo = toleranciaRiesgo;
+    PERFIL_INVERSION_MOCK.horizonteAnios = horizonteAnios;
+    return PERFIL_INVERSION_MOCK;
+  }
+
+  const row = await llamarTool<{ tolerancia_riesgo: string; horizonte_anios: number }>(
+    'actualizar_perfil_inversion',
+    { userId, toleranciaRiesgo, horizonteAnios },
+  );
+
+  return { toleranciaRiesgo: row.tolerancia_riesgo, horizonteAnios: row.horizonte_anios };
+}
+
 export interface PosicionPortafolio {
   id: string;
   nombre: string;
@@ -402,15 +460,21 @@ export interface PosicionPortafolio {
   cantidad: number;
   precioPromedio: number;
   valorInvertido: number;
+  activa: boolean;
 }
 
 const PORTAFOLIO_MOCK: PosicionPortafolio[] = [
-  { id: 'pos-1', nombre: 'Fondo Banorte Renta Variable', tipo: 'fondo', riesgo: 'alto', rendimientoAnualEstimado: 11.5, cantidad: 100, precioPromedio: 25.5, valorInvertido: 2550 },
-  { id: 'pos-2', nombre: 'CETES 28 días', tipo: 'cetes', riesgo: 'bajo', rendimientoAnualEstimado: 10.8, cantidad: 500, precioPromedio: 10, valorInvertido: 5000 },
+  { id: 'pos-1', nombre: 'Fondo Banorte Renta Variable', tipo: 'fondo', riesgo: 'alto', rendimientoAnualEstimado: 11.5, cantidad: 100, precioPromedio: 25.5, valorInvertido: 2550, activa: true },
+  { id: 'pos-2', nombre: 'CETES 28 días', tipo: 'cetes', riesgo: 'bajo', rendimientoAnualEstimado: 10.8, cantidad: 500, precioPromedio: 10, valorInvertido: 5000, activa: true },
 ];
 
-export async function getPortafolioUsuario(userId: string): Promise<PosicionPortafolio[]> {
-  if (USE_MOCK) return PORTAFOLIO_MOCK;
+export async function getPortafolioUsuario(
+  userId: string,
+  incluirVendidas = false,
+): Promise<PosicionPortafolio[]> {
+  if (USE_MOCK) {
+    return incluirVendidas ? PORTAFOLIO_MOCK : PORTAFOLIO_MOCK.filter((p) => p.activa);
+  }
 
   const rows = await llamarTool<
     Array<{
@@ -422,8 +486,9 @@ export async function getPortafolioUsuario(userId: string): Promise<PosicionPort
       cantidad: string | number;
       precio_promedio: string | number;
       valor_invertido: string | number;
+      activa: boolean;
     }>
-  >('get_portafolio', { userId });
+  >('get_portafolio', { userId, incluirVendidas });
 
   return rows.map((p) => ({
     id: p.id,
@@ -434,7 +499,86 @@ export async function getPortafolioUsuario(userId: string): Promise<PosicionPort
     cantidad: Number(p.cantidad),
     precioPromedio: Number(p.precio_promedio),
     valorInvertido: Number(p.valor_invertido),
+    activa: p.activa,
   }));
+}
+
+export interface PosicionMutada {
+  id: string;
+  cantidad: number;
+  precioPromedio: number;
+  activa: boolean;
+}
+
+export async function comprarPosicion(
+  userId: string,
+  instrumentoId: string,
+  cantidad: number,
+  precioCompra: number,
+): Promise<PosicionMutada> {
+  if (USE_MOCK) {
+    const instrumento = INSTRUMENTOS_MOCK.find((i) => i.id === instrumentoId);
+    const existente = PORTAFOLIO_MOCK.find((p) => p.id.startsWith('pos-') && p.activa && p.nombre === instrumento?.nombre);
+
+    if (existente) {
+      const nueva = existente.cantidad + cantidad;
+      existente.precioPromedio = (existente.cantidad * existente.precioPromedio + cantidad * precioCompra) / nueva;
+      existente.cantidad = nueva;
+      existente.valorInvertido = existente.cantidad * existente.precioPromedio;
+      return { id: existente.id, cantidad: existente.cantidad, precioPromedio: existente.precioPromedio, activa: true };
+    }
+
+    const nueva: PosicionPortafolio = {
+      id: `pos-mock-${PORTAFOLIO_MOCK.length + 1}`,
+      nombre: instrumento?.nombre ?? instrumentoId,
+      tipo: instrumento?.tipo ?? '',
+      riesgo: instrumento?.riesgo ?? '',
+      rendimientoAnualEstimado: instrumento?.rendimientoAnualEstimado ?? 0,
+      cantidad,
+      precioPromedio: precioCompra,
+      valorInvertido: cantidad * precioCompra,
+      activa: true,
+    };
+    PORTAFOLIO_MOCK.push(nueva);
+    return { id: nueva.id, cantidad: nueva.cantidad, precioPromedio: nueva.precioPromedio, activa: true };
+  }
+
+  const p = await llamarTool<{ id: string; cantidad: string | number; precio_promedio: string | number; activa: boolean }>(
+    'comprar_posicion',
+    { userId, instrumentoId, cantidad, precioCompra },
+  );
+
+  return { id: p.id, cantidad: Number(p.cantidad), precioPromedio: Number(p.precio_promedio), activa: p.activa };
+}
+
+export async function venderPosicion(
+  posicionId: string,
+  cantidad?: number,
+): Promise<PosicionMutada | { error: string }> {
+  if (USE_MOCK) {
+    const pos = PORTAFOLIO_MOCK.find((p) => p.id === posicionId && p.activa);
+    if (!pos) return { error: 'Posición no encontrada o ya está vendida.' };
+
+    const aVender = cantidad ?? pos.cantidad;
+    if (aVender > pos.cantidad) return { error: 'No se puede vender más de lo que se tiene.' };
+
+    if (aVender === pos.cantidad) {
+      pos.activa = false;
+    } else {
+      pos.cantidad -= aVender;
+      pos.valorInvertido = pos.cantidad * pos.precioPromedio;
+    }
+    return { id: pos.id, cantidad: pos.cantidad, precioPromedio: pos.precioPromedio, activa: pos.activa };
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; cantidad: string | number; precio_promedio: string | number; activa: boolean }
+  >('vender_posicion', { posicionId, cantidad });
+
+  if ('error' in resultado) return resultado;
+
+  return { id: resultado.id, cantidad: Number(resultado.cantidad), precioPromedio: Number(resultado.precio_promedio), activa: resultado.activa };
 }
 
 // ============================================================

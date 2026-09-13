@@ -116,8 +116,14 @@ create table if not exists posiciones_portafolio (
   usuario_id text not null references usuarios(id),
   instrumento_id text not null references instrumentos(id),
   cantidad numeric not null check (cantidad > 0),
-  precio_promedio numeric not null check (precio_promedio > 0)
+  precio_promedio numeric not null check (precio_promedio > 0),
+  activa boolean not null default true
 );
+
+-- migración idempotente: `activa` es el borrado lógico al vender por
+-- completo -- `cantidad`/`precio_promedio` se quedan como quedaron (no se
+-- ponen en 0), es el registro de lo que se tenía antes de vender.
+alter table posiciones_portafolio add column if not exists activa boolean not null default true;
 
 -- ============================================================
 -- 3. Crédito — precalificación, amortización, refinanciamiento

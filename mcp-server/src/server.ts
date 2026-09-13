@@ -239,6 +239,40 @@ server.tool(
 // --- Inversiones ---
 
 server.tool(
+  'get_instrumentos',
+  'Obtiene el catálogo de instrumentos de inversión disponibles (no solo los que ya tiene el usuario) -- para simular "si invierto en X".',
+  {
+    tipo: z.enum(['accion', 'fondo', 'cetes', 'etf']).optional().describe('Filtra por tipo de instrumento'),
+    riesgo: z.enum(['bajo', 'medio', 'alto']).optional().describe('Filtra por nivel de riesgo'),
+  },
+  async ({ tipo, riesgo }) => {
+    const condiciones = ['true'];
+    const valores: unknown[] = [];
+
+    if (tipo) {
+      valores.push(tipo);
+      condiciones.push(`tipo = $${valores.length}`);
+    }
+    if (riesgo) {
+      valores.push(riesgo);
+      condiciones.push(`riesgo = $${valores.length}`);
+    }
+
+    const { rows } = await pool.query(
+      `select id, nombre, tipo, riesgo, rendimiento_anual_estimado
+       from instrumentos
+       where ${condiciones.join(' and ')}
+       order by rendimiento_anual_estimado desc`,
+      valores,
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
   'get_perfil_inversion',
   'Obtiene el perfil de inversión del usuario: tolerancia al riesgo y horizonte en años.',
   {
@@ -259,25 +293,151 @@ server.tool(
 );
 
 server.tool(
-  'get_portafolio',
-  'Obtiene las posiciones de inversión del usuario: instrumento, cantidad, precio promedio y valor invertido.',
+  'actualizar_perfil_inversion',
+  'Crea o actualiza el perfil de inversión del usuario (tolerancia al riesgo y horizonte).',
   {
     userId: z.string().describe('Id del usuario'),
+    toleranciaRiesgo: z.enum(['conservador', 'moderado', 'agresivo']),
+    horizonteAnios: z.number().int().positive(),
   },
-  async ({ userId }) => {
+  async ({ userId, toleranciaRiesgo, horizonteAnios }) => {
+    const { rows } = await pool.query(
+      `insert into perfiles_inversion (usuario_id, tolerancia_riesgo, horizonte_anios)
+       values ($1, $2, $3)
+       on conflict (usuario_id) do update
+         set tolerancia_riesgo = excluded.tolerancia_riesgo,
+             horizonte_anios = excluded.horizonte_anios
+       returning tolerancia_riesgo, horizonte_anios`,
+      [userId, toleranciaRiesgo, horizonteAnios],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'get_portafolio',
+  'Obtiene las posiciones de inversión del usuario: instrumento, cantidad, precio promedio y valor invertido. Por defecto no incluye las vendidas.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    incluirVendidas: z.boolean().default(false).describe('Si es true, incluye también posiciones ya vendidas por completo'),
+  },
+  async ({ userId, incluirVendidas }) => {
     const { rows } = await pool.query(
       `select p.id, i.nombre, i.tipo, i.riesgo, i.rendimiento_anual_estimado,
-              p.cantidad, p.precio_promedio,
+              p.cantidad, p.precio_promedio, p.activa,
               (p.cantidad * p.precio_promedio) as valor_invertido
        from posiciones_portafolio p
        join instrumentos i on i.id = p.instrumento_id
        where p.usuario_id = $1
+         and (p.activa or $2)
        order by valor_invertido desc`,
-      [userId],
+      [userId, incluirVendidas],
     );
 
     return {
       content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
+  'comprar_posicion',
+  'Compra un instrumento: si el usuario ya tiene una posición activa en ese instrumento, promedia el precio; si no, crea una posición nueva.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    instrumentoId: z.string().describe('Id del instrumento (ver get_instrumentos)'),
+    cantidad: z.number().positive().describe('Cantidad de unidades a comprar'),
+    precioCompra: z.number().positive().describe('Precio por unidad al que se compra'),
+  },
+  async ({ userId, instrumentoId, cantidad, precioCompra }) => {
+    const existente = await pool.query(
+      `select id, cantidad, precio_promedio from posiciones_portafolio
+       where usuario_id = $1 and instrumento_id = $2 and activa`,
+      [userId, instrumentoId],
+    );
+
+    if (existente.rows.length > 0) {
+      const pos = existente.rows[0];
+      const cantidadVieja = Number(pos.cantidad);
+      const precioViejo = Number(pos.precio_promedio);
+      const cantidadNueva = cantidadVieja + cantidad;
+      const precioPromedioNuevo = (cantidadVieja * precioViejo + cantidad * precioCompra) / cantidadNueva;
+
+      const { rows } = await pool.query(
+        `update posiciones_portafolio set cantidad = $2, precio_promedio = $3
+         where id = $1
+         returning id, cantidad, precio_promedio, activa`,
+        [pos.id, cantidadNueva, precioPromedioNuevo],
+      );
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+      };
+    }
+
+    const { rows } = await pool.query(
+      `insert into posiciones_portafolio (id, usuario_id, instrumento_id, cantidad, precio_promedio)
+       values ('pos-' || gen_random_uuid(), $1, $2, $3, $4)
+       returning id, cantidad, precio_promedio, activa`,
+      [userId, instrumentoId, cantidad, precioCompra],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'vender_posicion',
+  'Vende una posición, total o parcialmente. Si no se especifica cantidad, o la cantidad cubre toda la posición, la marca como vendida (borrado lógico).',
+  {
+    posicionId: z.string().describe('Id de la posición'),
+    cantidad: z.number().positive().optional().describe('Cantidad a vender. Si no se especifica, se vende toda la posición.'),
+  },
+  async ({ posicionId, cantidad }) => {
+    const existente = await pool.query(
+      `select cantidad from posiciones_portafolio where id = $1 and activa`,
+      [posicionId],
+    );
+
+    if (existente.rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Posición no encontrada o ya está vendida.' }) }],
+      };
+    }
+
+    const cantidadActual = Number(existente.rows[0].cantidad);
+    const cantidadAVender = cantidad ?? cantidadActual;
+
+    if (cantidadAVender > cantidadActual) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'No se puede vender más de lo que se tiene.' }) }],
+      };
+    }
+
+    if (cantidadAVender === cantidadActual) {
+      const { rows } = await pool.query(
+        `update posiciones_portafolio set activa = false where id = $1
+         returning id, cantidad, precio_promedio, activa`,
+        [posicionId],
+      );
+      return {
+        content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+      };
+    }
+
+    const { rows } = await pool.query(
+      `update posiciones_portafolio set cantidad = cantidad - $2 where id = $1
+       returning id, cantidad, precio_promedio, activa`,
+      [posicionId, cantidadAVender],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
     };
   },
 );
