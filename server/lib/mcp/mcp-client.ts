@@ -155,11 +155,24 @@ export async function getMetasUsuario(userId: string): Promise<Meta[]> {
   }));
 }
 
+export interface FiltroTransacciones {
+  limite?: number;
+  categoria?: string;
+  desde?: string;
+  hasta?: string;
+}
+
 export async function getTransaccionesRecientes(
   userId: string,
-  limite = 10,
+  { limite = 10, categoria, desde, hasta }: FiltroTransacciones = {},
 ): Promise<Transaccion[]> {
-  if (USE_MOCK) return TRANSACCIONES_MOCK.slice(0, limite);
+  if (USE_MOCK) {
+    let resultado = TRANSACCIONES_MOCK;
+    if (categoria) resultado = resultado.filter((t) => t.categoria === categoria);
+    if (desde) resultado = resultado.filter((t) => t.fecha >= desde);
+    if (hasta) resultado = resultado.filter((t) => t.fecha <= hasta);
+    return resultado.slice(0, limite);
+  }
 
   const rows = await llamarTool<
     Array<{
@@ -169,7 +182,7 @@ export async function getTransaccionesRecientes(
       categoria: string;
       fecha: string;
     }>
-  >('get_transacciones', { userId, limite });
+  >('get_transacciones', { userId, limite, categoria, desde, hasta });
 
   return rows.map((t) => ({
     id: t.id,
@@ -410,11 +423,22 @@ const TRANSFERENCIAS_MOCK: Transferencia[] = [
   { id: 'transferencia-2', tipo: 'recibida', monto: 300, concepto: 'Pago compartido', estatus: 'completada', fecha: new Date().toISOString(), contacto: 'María López' },
 ];
 
+export interface FiltroTransferencias {
+  limite?: number;
+  tipo?: 'enviada' | 'recibida';
+  estatus?: 'pendiente' | 'completada' | 'fallida';
+}
+
 export async function getTransferenciasRecientes(
   userId: string,
-  limite = 10,
+  { limite = 10, tipo, estatus }: FiltroTransferencias = {},
 ): Promise<Transferencia[]> {
-  if (USE_MOCK) return TRANSFERENCIAS_MOCK.slice(0, limite);
+  if (USE_MOCK) {
+    let resultado = TRANSFERENCIAS_MOCK;
+    if (tipo) resultado = resultado.filter((t) => t.tipo === tipo);
+    if (estatus) resultado = resultado.filter((t) => t.estatus === estatus);
+    return resultado.slice(0, limite);
+  }
 
   const rows = await llamarTool<
     Array<{
@@ -426,7 +450,7 @@ export async function getTransferenciasRecientes(
       fecha: string;
       contacto: string | null;
     }>
-  >('get_transferencias', { userId, limite });
+  >('get_transferencias', { userId, limite, tipo, estatus });
 
   return rows.map((t) => ({
     id: t.id,

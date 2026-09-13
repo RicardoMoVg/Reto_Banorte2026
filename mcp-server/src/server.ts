@@ -38,19 +38,39 @@ server.tool(
 
 server.tool(
   'get_transacciones',
-  'Obtiene las transacciones más recientes del usuario.',
+  'Obtiene las transacciones del usuario, opcionalmente filtradas por categoría y/o rango de fechas.',
   {
     userId: z.string().describe('Id del usuario'),
     limite: z.number().int().positive().max(50).default(10),
+    categoria: z.string().optional().describe('Filtra solo transacciones de esta categoría, ej. "comida"'),
+    desde: z.string().optional().describe('Fecha mínima (ISO 8601), inclusive'),
+    hasta: z.string().optional().describe('Fecha máxima (ISO 8601), inclusive'),
   },
-  async ({ userId, limite }) => {
+  async ({ userId, limite, categoria, desde, hasta }) => {
+    const condiciones = ['usuario_id = $1'];
+    const valores: unknown[] = [userId];
+
+    if (categoria) {
+      valores.push(categoria);
+      condiciones.push(`categoria = $${valores.length}`);
+    }
+    if (desde) {
+      valores.push(desde);
+      condiciones.push(`fecha >= $${valores.length}`);
+    }
+    if (hasta) {
+      valores.push(hasta);
+      condiciones.push(`fecha <= $${valores.length}`);
+    }
+
+    valores.push(limite);
     const { rows } = await pool.query(
       `select id, descripcion, monto, categoria, fecha
        from transacciones
-       where usuario_id = $1
+       where ${condiciones.join(' and ')}
        order by fecha desc
-       limit $2`,
-      [userId, limite],
+       limit $${valores.length}`,
+      valores,
     );
 
     return {
@@ -236,20 +256,35 @@ server.tool(
 
 server.tool(
   'get_transferencias',
-  'Obtiene las transferencias recientes del usuario, enviadas y recibidas (cobros).',
+  'Obtiene las transferencias del usuario, enviadas y recibidas (cobros), opcionalmente filtradas por tipo y/o estatus.',
   {
     userId: z.string().describe('Id del usuario'),
     limite: z.number().int().positive().max(50).default(10),
+    tipo: z.enum(['enviada', 'recibida']).optional().describe('Filtra solo transferencias enviadas o solo recibidas (cobros)'),
+    estatus: z.enum(['pendiente', 'completada', 'fallida']).optional().describe('Filtra por estatus de la transferencia'),
   },
-  async ({ userId, limite }) => {
+  async ({ userId, limite, tipo, estatus }) => {
+    const condiciones = ['t.usuario_id = $1'];
+    const valores: unknown[] = [userId];
+
+    if (tipo) {
+      valores.push(tipo);
+      condiciones.push(`t.tipo = $${valores.length}`);
+    }
+    if (estatus) {
+      valores.push(estatus);
+      condiciones.push(`t.estatus = $${valores.length}`);
+    }
+
+    valores.push(limite);
     const { rows } = await pool.query(
       `select t.id, t.tipo, t.monto, t.concepto, t.estatus, t.fecha, c.nombre as contacto
        from transferencias t
        left join contactos_pago c on c.id = t.contacto_id
-       where t.usuario_id = $1
+       where ${condiciones.join(' and ')}
        order by t.fecha desc
-       limit $2`,
-      [userId, limite],
+       limit $${valores.length}`,
+      valores,
     );
 
     return {

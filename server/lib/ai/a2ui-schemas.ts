@@ -36,6 +36,12 @@ export const schemaTransacciones = z.object({
     .max(20)
     .optional()
     .describe('Cuántos movimientos mostrar. Si no se especifica, se usan 10.'),
+  categoria: z
+    .string()
+    .optional()
+    .describe(
+      'Filtra solo movimientos de esta categoría, ej. "comida", "suscripciones". Si no se especifica, se muestran todas.',
+    ),
   mensajeAgente: z.string().describe('Observación breve, una línea.'),
 });
 
