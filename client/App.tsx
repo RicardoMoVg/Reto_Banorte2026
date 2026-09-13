@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Pruebas from './Pruebas';
 import { RastreadorMetas, type RastreadorMetasProps } from './components/RastreadorMetas';
 import { TarjetaSaldo, type TarjetaSaldoProps } from './components/TarjetaSaldo';
 import { ListaTransacciones, type ListaTransaccionesProps } from './components/ListaTransacciones';
@@ -57,6 +58,9 @@ function uid() {
 }
 
 export default function App() {
+  // Redirect temporal: pintar solo la prueba del componente (quitarlo al terminar).
+  //return <Pruebas />;
+
   const [input, setInput] = useState('');
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [cargando, setCargando] = useState(false);

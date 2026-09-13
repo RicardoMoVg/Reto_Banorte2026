@@ -51,7 +51,8 @@ const METAS_MOCK: Meta[] = [
 
 const TRANSACCIONES_MOCK: Transaccion[] = [
   { id: 'tx-1', descripcion: 'Café Starbucks', monto: -85, fecha: new Date().toISOString(), categoria: 'comida' },
-  { id: 'tx-2', descripcion: 'Depósito nómina', monto: 15000, fecha: new Date().toISOString(), categoria: 'ingreso' },
+  { id: 'tx-2', descripcion: 'Billar', monto: -200, fecha: new Date().toISOString(), categoria: 'diversion' },
+  { id: 'tx-3', descripcion: 'Depósito nómina', monto: 15000, fecha: new Date().toISOString(), categoria: 'ingreso' },
 ];
 
 type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
