@@ -1,8 +1,9 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { fijarToken, login, logout, registrar } from '../api/rest';
 import { PERFIL_DEMO, type Perfil } from './perfilDemo';
 
 export interface Sesion {
-  /** Correo con el que se entró. Es lo único que se conserva del formulario. */
+  /** Correo con el que se entró. */
   correo: string;
 }
 
@@ -10,8 +11,17 @@ interface ContextoSesion {
   sesion: Sesion | null;
   /** Datos del titular. `null` mientras no hay sesión. */
   perfil: Perfil | null;
-  iniciarSesion: (correo: string) => void;
-  cerrarSesion: () => void;
+  /** Mientras hay una petición de auth en vuelo (login/registro/logout). */
+  cargando: boolean;
+  /** Lanza `ErrorApi` si Supabase rechaza las credenciales. */
+  iniciarSesion: (correo: string, contrasena: string) => Promise<void>;
+  /**
+   * Si el proyecto de Supabase pide confirmar el correo, regresa
+   * `{ requiereConfirmacion: true }` y NO abre sesión -- no hay token
+   * todavía. La pantalla debe avisarle al usuario que revise su correo.
+   */
+  registrarse: (correo: string, contrasena: string, nombre?: string) => Promise<{ requiereConfirmacion: boolean }>;
+  cerrarSesion: () => Promise<void>;
   /** Aplica solo los campos que vengan; el resto se queda como estaba. */
   actualizarPerfil: (cambios: Partial<Perfil>) => void;
 }
@@ -21,54 +31,86 @@ const SesionContext = createContext<ContextoSesion | null>(null);
 /**
  * Estado de sesión de la app y datos del titular.
  *
- * ⚠️ Esto NO es autenticación. El backend no tiene auth: `server/app/api/
- * agent/route.ts` usa un `USER_ID` fijo (`'demo-user'`), el mismo que
- * siembra `mcp-server/src/seed.ts`. Cualquier credencial abre la app, y
- * nada de lo que se escriba en el formulario sale de este dispositivo.
+ * `iniciarSesion`/`registrarse` llaman a Supabase Auth de verdad (vía
+ * `server/app/api/auth/*`, ver `constitution.md` 3.3) y guardan el
+ * `accessToken` con `fijarToken()` para que el resto de llamadas REST
+ * (`lib/api/rest.ts`) viajen autenticadas. `cerrarSesion` revoca ese token
+ * en Supabase antes de limpiar el estado local.
  *
- * Tres decisiones deliberadas, no pendientes por flojera:
+ * Dos decisiones que se mantienen igual que antes de conectar auth real:
  *
- * 1. **La contraseña nunca se guarda** — ni en este estado, ni en
- *    AsyncStorage, ni en SQLite. Entra al handler del formulario, se valida
- *    que no esté vacía, y se descarta. Guardar una credencial en claro en
- *    el dispositivo para una demo no tiene ninguna ventaja y sí un riesgo
- *    real si alguien copia el patrón a producción.
- * 2. **La sesión vive solo en memoria** — al recargar la app se vuelve al
- *    login. Persistirla implicaría `expo-secure-store` y un token de
- *    verdad; mientras el backend no emita uno, "recordar sesión" sería
- *    puro teatro.
- * 3. **El perfil editado tampoco se persiste** — se reinicia a
- *    `PERFIL_DEMO` en cada sesión, y la ventana de edición lo dice. Es la
- *    misma razón: sin backend que lo reciba, guardarlo en disco daría la
- *    falsa impresión de que el cambio viajó a algún lado.
- *
- * Cuando exista auth real, esto es lo que cambia: `iniciarSesion` llama al
- * backend y guarda el token en `expo-secure-store`, `actualizarPerfil`
- * hace el PATCH correspondiente, y el `userId` deja de estar hardcodeado
- * en `server/`. Las ventanas no se tocan.
+ * 1. **La sesión vive solo en memoria** — al recargar la app se vuelve al
+ *    login. Persistirla implicaría `expo-secure-store`; mientras nadie lo
+ *    pida, "recordar sesión" no vale el dependency nuevo.
+ * 2. **El perfil editado tampoco se persiste** — Supabase Auth solo sabe
+ *    de `id`/`email`/`nombre` (lo que guarda `usuarios` en Postgres, vía
+ *    `crear_usuario`/`get_usuario`). Los demás campos (teléfono, fecha de
+ *    nacimiento, etc.) siguen siendo de `PERFIL_DEMO` -- no son datos
+ *    financieros (constitution.md 4.2/6 solo prohíbe inventar esos), y
+ *    todavía no hay dónde guardarlos de verdad.
  */
 export function SesionProvider({ children }: { children: ReactNode }) {
   const [sesion, setSesion] = useState<Sesion | null>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
+  const [tokens, setTokens] = useState<{ access: string; refresh: string } | null>(null);
+  const [cargando, setCargando] = useState(false);
+
+  function abrirSesion(correo: string, nombre: string | null, accessToken: string, refreshToken: string) {
+    fijarToken(accessToken);
+    setTokens({ access: accessToken, refresh: refreshToken });
+    setSesion({ correo });
+    // El correo (y el nombre, si Supabase ya lo tenía) real ganan sobre el
+    // de ejemplo: son los únicos datos del titular que sí vienen de verdad.
+    setPerfil({ ...PERFIL_DEMO, correo, ...(nombre ? { nombre } : null) });
+  }
 
   const valor = useMemo<ContextoSesion>(
     () => ({
       sesion,
       perfil,
-      iniciarSesion: (correo: string) => {
-        setSesion({ correo });
-        // El correo real gana sobre el de ejemplo: es el único dato del
-        // titular que el usuario sí escribió.
-        setPerfil({ ...PERFIL_DEMO, correo });
+      cargando,
+      iniciarSesion: async (correo: string, contrasena: string) => {
+        setCargando(true);
+        try {
+          const { usuario, session } = await login(correo, contrasena);
+          abrirSesion(usuario.email ?? correo, usuario.nombre, session.accessToken, session.refreshToken);
+        } finally {
+          setCargando(false);
+        }
       },
-      cerrarSesion: () => {
-        setSesion(null);
-        setPerfil(null);
+      registrarse: async (correo: string, contrasena: string, nombre?: string) => {
+        setCargando(true);
+        try {
+          const { usuario, session, requiereConfirmacion } = await registrar(correo, contrasena, nombre);
+          if (session) {
+            abrirSesion(usuario.email ?? correo, usuario.nombre, session.accessToken, session.refreshToken);
+          }
+          return { requiereConfirmacion };
+        } finally {
+          setCargando(false);
+        }
+      },
+      cerrarSesion: async () => {
+        setCargando(true);
+        try {
+          if (tokens) {
+            // Best-effort: si Supabase ya no reconoce el token (expiró, o
+            // ya se cerró sesión en otro lado) igual se limpia el estado
+            // local -- no tiene caso dejar al usuario atorado en la app.
+            await logout(tokens.access, tokens.refresh).catch(() => {});
+          }
+        } finally {
+          fijarToken(null);
+          setTokens(null);
+          setSesion(null);
+          setPerfil(null);
+          setCargando(false);
+        }
       },
       actualizarPerfil: (cambios: Partial<Perfil>) =>
         setPerfil((previo) => (previo ? { ...previo, ...cambios } : previo)),
     }),
-    [sesion, perfil],
+    [sesion, perfil, cargando, tokens],
   );
 
   return <SesionContext.Provider value={valor}>{children}</SesionContext.Provider>;
