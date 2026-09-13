@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Boton } from '../../components/ui/Boton';
 import { Chip } from '../../components/ui/Chip';
@@ -9,10 +9,17 @@ import { Tarjeta } from '../../components/ui/Tarjeta';
 import { SurfaceRenderer } from '../../lib/a2ui/SurfaceRenderer';
 import { useAgent } from '../../lib/a2ui/AgentProvider';
 import { useTablero, type BloqueAnclado } from '../../lib/a2ui/TableroProvider';
+import { getTarjetas, getTransacciones } from '../../lib/api/rest';
 import { primerNombre, saludo } from '../../lib/sesion/perfilDemo';
 import { useSesion } from '../../lib/sesion/SesionProvider';
 import { useChatPanel } from '../../lib/ui/ChatPanelProvider';
 import { colores, espacio, radio, tipografia, vidrio } from '../../lib/ui/theme';
+
+const formatoMXN = new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+  maximumFractionDigits: 0,
+});
 
 /**
  * Preguntas que el agente sí puede responder con un bloque A2UI (una por
@@ -100,6 +107,38 @@ export default function Inicio() {
    */
   const { bloques, desanclar } = useTablero();
 
+  /**
+   * KPI de saldo. Antes era un monto y una tarjeta escritos a mano en el
+   * JSX -- se quedaban igual sin importar quién iniciara sesión. Sale de
+   * REST (no del agente): es una cifra que la ventana necesita apenas se
+   * abre, no algo que amerite una pregunta al LLM (constitution.md 3.3).
+   */
+  const [saldo, setSaldo] = useState<number | null>(null);
+  const [ultimos4Debito, setUltimos4Debito] = useState<string | null>(null);
+  const [cargandoSaldo, setCargandoSaldo] = useState(true);
+  const [errorSaldo, setErrorSaldo] = useState(false);
+
+  const cargarSaldo = useCallback(async () => {
+    setCargandoSaldo(true);
+    setErrorSaldo(false);
+    try {
+      const [{ saldo: saldoActual }, { debito }] = await Promise.all([
+        getTransacciones({ limite: 1 }),
+        getTarjetas(),
+      ]);
+      setSaldo(saldoActual);
+      setUltimos4Debito(debito[0]?.ultimos4 ?? null);
+    } catch {
+      setErrorSaldo(true);
+    } finally {
+      setCargandoSaldo(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    cargarSaldo();
+  }, [cargarSaldo]);
+
   function preguntar(texto: string) {
     enviar(texto);
     abrirChat();
@@ -134,12 +173,28 @@ export default function Inicio() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* KPI por defecto */}
+        {/* KPI de saldo */}
         <Tarjeta>
           <View style={styles.kpiContainer}>
             <Text style={styles.kpiEtiqueta}>Saldo disponible</Text>
-            <Text style={styles.kpiMonto}>$13,496.00</Text>
-            <Text style={styles.kpiCuenta}>Débito •• 2045</Text>
+            {cargandoSaldo ? (
+              <ActivityIndicator style={styles.kpiCargando} color={colores.marca} />
+            ) : errorSaldo ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Reintentar cargar el saldo"
+                onPress={cargarSaldo}
+              >
+                <Text style={styles.kpiError}>No se pudo cargar. Toca para reintentar.</Text>
+              </Pressable>
+            ) : (
+              <>
+                <Text style={styles.kpiMonto}>{formatoMXN.format(saldo ?? 0)}</Text>
+                {ultimos4Debito ? (
+                  <Text style={styles.kpiCuenta}>Débito •• {ultimos4Debito}</Text>
+                ) : null}
+              </>
+            )}
           </View>
         </Tarjeta>
 
@@ -178,8 +233,8 @@ export default function Inicio() {
         )}
 
         <Text style={styles.nota}>
-          Lo que fijas aquí vive en este dispositivo y se pierde al recargar: todavía no se
-          guarda en tu cuenta.
+          Lo que fijas aquí se guarda en tu cuenta: sigue apareciendo aunque cierres sesión o
+          cambies de dispositivo.
         </Text>
       </ScrollView>
 
@@ -318,6 +373,8 @@ const styles = StyleSheet.create({
   kpiEtiqueta: { fontSize: 13, color: colores.textoApoyo, marginBottom: 2 },
   kpiMonto: { fontSize: 32, fontWeight: '800', color: colores.texto, letterSpacing: -0.5 },
   kpiCuenta: { fontSize: 13, fontWeight: '500', color: colores.textoSecundario, marginTop: espacio.xs },
+  kpiCargando: { alignSelf: 'flex-start', marginTop: espacio.sm },
+  kpiError: { fontSize: 13, color: colores.textoApoyo, marginTop: espacio.sm },
 
   seccion: { gap: espacio.md },
   etiquetaSeccion: {
