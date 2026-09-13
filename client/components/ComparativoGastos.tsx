@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colores } from '../lib/ui/theme';
 
@@ -26,7 +27,7 @@ const formatoMXN = new Intl.NumberFormat('es-MX', {
  * entrada queda para cuando se agregue react-native-reanimated, no es
  * necesaria para probar el flujo.
  */
-export function ComparativoGastos({ titulo, categorias, mensajeAgente }: ComparativoGastosProps) {
+function ComparativoGastosBase({ titulo, categorias, mensajeAgente }: ComparativoGastosProps) {
   const maximo = Math.max(...categorias.map((c) => Math.abs(c.monto)), 1);
 
   return (
@@ -56,6 +57,13 @@ export function ComparativoGastos({ titulo, categorias, mensajeAgente }: Compara
     </View>
   );
 }
+
+/**
+ * Memoizado: con el texto llegando en fragmentos, `mensajes` cambia muchas
+ * veces por respuesta. Sin esto, cada fragmento repinta todas las tarjetas
+ * del historial aunque sus props sean identicas.
+ */
+export const ComparativoGastos = memo(ComparativoGastosBase);
 
 const styles = StyleSheet.create({
   card: {

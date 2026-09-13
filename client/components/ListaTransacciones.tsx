@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colores } from '../lib/ui/theme';
 
@@ -25,7 +26,7 @@ const formatoMXN = new Intl.NumberFormat('es-MX', {
  * components/generative/ListaTransacciones.tsx (ya retirado). Mismo
  * contrato de props (output de la tool `mostrarTransacciones`).
  */
-export function ListaTransacciones({ titulo, transacciones, mensajeAgente }: ListaTransaccionesProps) {
+function ListaTransaccionesBase({ titulo, transacciones, mensajeAgente }: ListaTransaccionesProps) {
   return (
     <View style={styles.card}>
       <Text style={styles.titulo}>{titulo}</Text>
@@ -51,6 +52,13 @@ export function ListaTransacciones({ titulo, transacciones, mensajeAgente }: Lis
     </View>
   );
 }
+
+/**
+ * Memoizado: con el texto llegando en fragmentos, `mensajes` cambia muchas
+ * veces por respuesta. Sin esto, cada fragmento repinta todas las tarjetas
+ * del historial aunque sus props sean identicas.
+ */
+export const ListaTransacciones = memo(ListaTransaccionesBase);
 
 const styles = StyleSheet.create({
   card: {

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colores } from '../lib/ui/theme';
 
@@ -19,7 +20,7 @@ const formatoMXN = new Intl.NumberFormat('es-MX', {
  * components/generative/TarjetaSaldo.tsx (ya retirado). Mismo contrato de
  * props (output de la tool `mostrarSaldo`), sin framer-motion/Tailwind.
  */
-export function TarjetaSaldo({ titulo, monto, mensajeAgente }: TarjetaSaldoProps) {
+function TarjetaSaldoBase({ titulo, monto, mensajeAgente }: TarjetaSaldoProps) {
   return (
     <View style={styles.card}>
       <Text style={styles.titulo}>{titulo}</Text>
@@ -28,6 +29,13 @@ export function TarjetaSaldo({ titulo, monto, mensajeAgente }: TarjetaSaldoProps
     </View>
   );
 }
+
+/**
+ * Memoizado: con el texto llegando en fragmentos, `mensajes` cambia muchas
+ * veces por respuesta. Sin esto, cada fragmento repinta todas las tarjetas
+ * del historial aunque sus props sean identicas.
+ */
+export const TarjetaSaldo = memo(TarjetaSaldoBase);
 
 const styles = StyleSheet.create({
   card: {

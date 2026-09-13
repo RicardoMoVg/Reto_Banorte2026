@@ -46,7 +46,9 @@ export function AccionesProvider({ children }: { children: ReactNode }) {
 
       // Solo texto que el modelo ya había redactado (`etiqueta`), nunca una
       // cifra: el modelo no debe retranscribir montos (constitution.md 4.4).
-      enviar(decision === 'aceptada' ? `Acepto ${etiqueta}.` : `No acepto ${etiqueta}.`);
+      enviar(decision === 'aceptada' ? `Acepto ${etiqueta}.` : `No acepto ${etiqueta}.`, {
+        esDecision: true,
+      });
     },
     [enviar],
   );

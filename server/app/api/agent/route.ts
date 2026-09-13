@@ -56,8 +56,57 @@ const PROVEEDORES: Array<{ nombre: string; model: LanguageModel }> = [
  * a medio stream no se reintenta (ya se le mandó algo al cliente, reiniciar
  * duplicaría contenido).
  */
-async function* generarEventos(message: string): AsyncGenerator<EventoA2ui> {
-  const tools = buildA2uiTools(USER_ID);
+/**
+ * Turno de la conversación tal como lo manda el cliente.
+ *
+ * El historial viaja en cada request y NO se guarda aquí: este endpoint
+ * sigue siendo stateless por diseño (constitution.md 3.1 -- el historial
+ * vive solo en el dispositivo y nunca sube a Postgres). Agregar un store
+ * de conversaciones en el servidor seria el atajo que esa seccion prohibe.
+ */
+interface TurnoCliente {
+  rol: 'user' | 'asistente';
+  contenido: string;
+}
+
+/** Cuántos turnos se aceptan, y qué tan largo puede ser cada uno. */
+const MAX_TURNOS = 20;
+const MAX_CARACTERES = 2000;
+
+/**
+ * Normaliza lo que llegó en el body. El cliente es nuestro, pero igual se
+ * acota: un historial sin tope es una factura de tokens abierta, y basta
+ * un bug del cliente para mandar miles de turnos.
+ */
+function aMensajesDelModelo(historial: unknown) {
+  if (!Array.isArray(historial)) return [];
+
+  return historial
+    .filter((t): t is TurnoCliente => !!t && typeof (t as TurnoCliente).contenido === 'string')
+    .slice(-MAX_TURNOS)
+    .map((t) => ({
+      role: t.rol === 'user' ? ('user' as const) : ('assistant' as const),
+      content: t.contenido.slice(0, MAX_CARACTERES),
+    }));
+}
+
+async function* generarEventos(
+  message: string,
+  historial: unknown,
+  esDecision: boolean,
+): AsyncGenerator<EventoA2ui> {
+  /**
+   * En el turno en que el usuario responde una tarjeta de acción, el
+   * modelo NO recibe tools.
+   *
+   * Medido: sin esto, "Acepto el plan para tu fondo de emergencia" hacía
+   * que volviera a invocar `proponerPlanAhorro` en 2 de cada 3 intentos.
+   * El mensaje se parece demasiado a "quiero un plan" y la descripción de
+   * la tool le gana al system prompt. Pedirle por prompt que no lo haga es
+   * apostar a que obedezca; quitarle la herramienta lo vuelve imposible.
+   */
+  const tools = esDecision ? undefined : buildA2uiTools(USER_ID);
+  const turnosPrevios = aMensajesDelModelo(historial);
 
   for (let i = 0; i < PROVEEDORES.length; i++) {
     const { nombre, model } = PROVEEDORES[i];
@@ -67,7 +116,7 @@ async function* generarEventos(message: string): AsyncGenerator<EventoA2ui> {
       model,
       maxRetries: 0,
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: message }],
+      messages: [...turnosPrevios, { role: 'user', content: message }],
       tools,
       maxSteps: 1,
     });
@@ -119,7 +168,11 @@ async function* generarEventos(message: string): AsyncGenerator<EventoA2ui> {
 }
 
 export async function POST(req: Request) {
-  const { message } = (await req.json()) as { message: string };
+  const { message, historial, esDecision } = (await req.json()) as {
+    message: string;
+    historial?: unknown;
+    esDecision?: boolean;
+  };
 
   const encoder = new TextEncoder();
 
@@ -130,7 +183,7 @@ export async function POST(req: Request) {
       };
 
       try {
-        for await (const evento of generarEventos(message)) {
+        for await (const evento of generarEventos(message, historial, esDecision === true)) {
           enviar(evento);
         }
         enviar({ type: 'done' });

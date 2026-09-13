@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colores } from '../lib/ui/theme';
 
@@ -15,7 +16,7 @@ export interface RastreadorMetasProps {
  * framer-motion/Tailwind: solo View/Text + StyleSheet para esta primera
  * pasada. Sin catálogo/mini-SDK todavía — ver Paso 4 del plan.
  */
-export function RastreadorMetas({ titulo, porcentaje, mensajeAgente }: RastreadorMetasProps) {
+function RastreadorMetasBase({ titulo, porcentaje, mensajeAgente }: RastreadorMetasProps) {
   const pct = Math.min(100, Math.max(0, porcentaje));
 
   return (
@@ -34,6 +35,13 @@ export function RastreadorMetas({ titulo, porcentaje, mensajeAgente }: Rastreado
   );
 }
 
+
+/**
+ * Memoizado: con el texto llegando en fragmentos, `mensajes` cambia muchas
+ * veces por respuesta. Sin esto, cada fragmento repinta todas las tarjetas
+ * del historial aunque sus props sean identicas.
+ */
+export const RastreadorMetas = memo(RastreadorMetasBase);
 
 const styles = StyleSheet.create({
   card: {

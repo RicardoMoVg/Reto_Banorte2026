@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useAgentStream } from './useAgentStream';
 
 /**
@@ -29,8 +29,19 @@ const AgentContext = createContext<ContextoAgente | null>(null);
 export function AgentProvider({ children }: { children: ReactNode }) {
   const stream = useAgentStream(API_URL);
 
+  /**
+   * Sin este memo, `{ ...stream }` es un objeto nuevo en cada render y TODOS
+   * los consumidores vuelven a renderizar. Importa mucho mas desde que el
+   * texto llega en fragmentos: cada uno toca `mensajes`, y sin memo cada
+   * fragmento repintaba el arbol entero.
+   */
+  const valor = useMemo(
+    () => ({ ...stream, apiUrl: API_URL }),
+    [stream.mensajes, stream.cargando, stream.enviar, stream.limpiar],
+  );
+
   return (
-    <AgentContext.Provider value={{ ...stream, apiUrl: API_URL }}>
+    <AgentContext.Provider value={valor}>
       {children}
     </AgentContext.Provider>
   );
