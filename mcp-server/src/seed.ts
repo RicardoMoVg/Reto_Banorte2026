@@ -62,7 +62,9 @@ async function main() {
     `insert into instrumentos (id, nombre, tipo, riesgo, rendimiento_anual_estimado) values
        ('inst-1', 'Fondo Banorte Renta Variable', 'fondo', 'alto', 11.5),
        ('inst-2', 'CETES 28 días', 'cetes', 'bajo', 10.8),
-       ('inst-3', 'ETF S&P 500', 'etf', 'medio', 9.2)
+       ('inst-3', 'ETF S&P 500', 'etf', 'medio', 9.2),
+       ('inst-4', 'Dólar estadounidense (USD)', 'divisa', 'medio', 4.5),
+       ('inst-5', 'Euro (EUR)', 'divisa', 'medio', 3.8)
      on conflict (id) do nothing`,
   );
 

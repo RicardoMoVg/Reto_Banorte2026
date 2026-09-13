@@ -337,7 +337,7 @@ server.tool(
   'get_instrumentos',
   'Obtiene el catálogo de instrumentos de inversión disponibles (no solo los que ya tiene el usuario) -- para simular "si invierto en X".',
   {
-    tipo: z.enum(['accion', 'fondo', 'cetes', 'etf']).optional().describe('Filtra por tipo de instrumento'),
+    tipo: z.enum(['accion', 'fondo', 'cetes', 'etf', 'divisa']).optional().describe('Filtra por tipo de instrumento'),
     riesgo: z.enum(['bajo', 'medio', 'alto']).optional().describe('Filtra por nivel de riesgo'),
   },
   async ({ tipo, riesgo }) => {
