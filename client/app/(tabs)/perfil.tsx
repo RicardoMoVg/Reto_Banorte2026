@@ -6,7 +6,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-n
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PantallaMarca } from '../../components/ui/PantallaMarca';
 import { useAgent } from '../../lib/a2ui/AgentProvider';
-import { formatearFechaLarga, iniciales } from '../../lib/sesion/perfilDemo';
+import { formatearFechaLarga, formatearMesAnio, iniciales } from '../../lib/sesion/perfilDemo';
 import { useSesion } from '../../lib/sesion/SesionProvider';
 import { colores, espacio, radio, vidrio } from '../../lib/ui/theme';
 
@@ -72,24 +72,19 @@ export default function Perfil() {
           <Text style={styles.heroCorreo} numberOfLines={1}>
             {perfil.correo}
           </Text>
-
-          <View style={styles.insignia}>
-            <Ionicons name="flask-outline" size={12} color={colores.acento} />
-            <Text style={styles.insigniaTexto}>Datos de ejemplo</Text>
-          </View>
         </View>
 
         <Seccion titulo="Tus datos">
           <Dato icono="person-outline" etiqueta="Nombre completo" valor={perfil.nombre} />
-          <Dato icono="at-outline" etiqueta="Usuario" valor={perfil.usuario} />
+          <Dato icono="at-outline" etiqueta="Usuario" valor={perfil.usuario ?? 'Sin registrar'} />
           <Dato icono="mail-outline" etiqueta="Correo electrónico" valor={perfil.correo} />
           <Dato
             icono="calendar-outline"
             etiqueta="Fecha de nacimiento"
-            valor={formatearFechaLarga(perfil.nacimiento)}
+            valor={perfil.nacimiento ? formatearFechaLarga(perfil.nacimiento) : 'Sin registrar'}
           />
-          <Dato icono="call-outline" etiqueta="Teléfono" valor={perfil.telefono} />
-          <Dato icono="ribbon-outline" etiqueta="Cliente desde" valor={perfil.clienteDesde} />
+          <Dato icono="call-outline" etiqueta="Teléfono" valor={perfil.telefono ?? 'Sin registrar'} />
+          <Dato icono="ribbon-outline" etiqueta="Cliente desde" valor={formatearMesAnio(perfil.clienteDesde)} />
 
           <Pressable
             accessibilityRole="button"
@@ -117,10 +112,10 @@ export default function Perfil() {
         </Seccion>
 
         <Text style={styles.nota}>
-          El login no valida nada contra un servidor y tu contraseña no se guarda. La conversación
-          vive solo en este dispositivo y se borra al recargar. Si la API del agente no es la
-          correcta, no basta con editar el .env: hay que reiniciar Expo, porque lee las variables
-          una sola vez al arrancar.
+          Tu nombre, usuario, teléfono y fecha de nacimiento viven en Postgres. La sesión y la
+          conversación, en cambio, solo viven en este dispositivo y se pierden al recargar. Si la
+          API del agente no es la correcta, no basta con editar el .env: hay que reiniciar Expo,
+          porque lee las variables una sola vez al arrancar.
         </Text>
       </ScrollView>
 
@@ -227,20 +222,6 @@ const styles = StyleSheet.create({
   avatarTexto: { fontSize: 34, fontWeight: '700', color: colores.marca },
   heroNombre: { fontSize: 20, fontWeight: '700', color: colores.textoInverso },
   heroCorreo: { fontSize: 13, color: 'rgba(255, 255, 255, 0.8)' },
-  insignia: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: espacio.xs,
-    marginTop: espacio.sm,
-    borderRadius: radio.completo,
-    borderWidth: 1,
-    borderColor: vidrio.borde,
-    backgroundColor: vidrio.campo,
-    paddingHorizontal: espacio.md,
-    paddingVertical: espacio.xs,
-  },
-  insigniaTexto: { fontSize: 11, fontWeight: '600', color: colores.acento },
-
   seccion: { gap: espacio.sm },
   seccionTitulo: {
     fontSize: 12,

@@ -1,37 +1,14 @@
 export interface Perfil {
   nombre: string;
-  usuario: string;
+  /** `null` hasta que el usuario elige uno en "Editar perfil". */
+  usuario: string | null;
   correo: string;
-  /** ISO `AAAA-MM-DD`. Se guarda así y se formatea al pintar. */
-  nacimiento: string;
-  telefono: string;
-  /** Lo fija el banco: se muestra, no se edita. */
+  /** ISO `AAAA-MM-DD`, o `null` si no lo ha registrado. */
+  nacimiento: string | null;
+  telefono: string | null;
+  /** ISO de cuándo se creó la fila en Postgres. Se formatea al pintar (ver `formatearMesAnio`). */
   clienteDesde: string;
 }
-
-/**
- * Datos de ejemplo del titular.
- *
- * Son inventados y las pantallas que los muestran lo dicen en su propia cara
- * (la insignia de "Datos de ejemplo" en Perfil), no solo en este comentario.
- * Está permitido porque NINGUNO es un dato financiero: `constitution.md` 4.2
- * y 6 prohíben inventar montos, porcentajes y movimientos — esos solo pueden
- * venir del MCP a través de un bloque A2UI. Nombre, teléfono y fecha de
- * nacimiento no entran en esa categoría.
- *
- * Es la semilla del estado de `SesionProvider`, no la fuente que leen las
- * ventanas: el usuario puede editar su perfil y esos cambios viven en el
- * provider. Cuando exista auth de verdad, esto se reemplaza por lo que
- * regrese el backend y es el único archivo que se toca.
- */
-export const PERFIL_DEMO: Perfil = {
-  nombre: 'Ricardo Moreno',
-  usuario: '@ricardo.moreno',
-  correo: 'ricardo@banortech.mx',
-  nacimiento: '1998-03-14',
-  telefono: '+52 81 1234 5678',
-  clienteDesde: 'Marzo 2021',
-};
 
 /**
  * Validación de FORMA de un correo, no de existencia. Vive aquí para que el
@@ -82,6 +59,14 @@ export function formatearFechaLarga(iso: string) {
     month: 'long',
     year: 'numeric',
   }).format(new Date(anio, mes - 1, dia));
+}
+
+/** ISO (fecha u hora completa) → "marzo 2021", para "cliente desde". */
+export function formatearMesAnio(iso: string) {
+  const fecha = new Date(iso);
+  if (Number.isNaN(fecha.getTime())) return iso;
+
+  return new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(fecha);
 }
 
 /** ISO → "14/03/1998", el formato que se escribe en el campo. */

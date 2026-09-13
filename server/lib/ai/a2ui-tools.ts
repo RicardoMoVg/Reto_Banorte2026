@@ -37,7 +37,11 @@ import {
   activarPoliza,
   cancelarPoliza,
   crearSiniestro,
+  getSiniestrosUsuario,
   crearDiagnosticoFinanciero,
+  getDiagnosticoFinanciero,
+  getPerfilInversion,
+  getComprasTarjeta,
   crearHabitoFinanciero,
   actualizarRachaHabito,
   desactivarHabito,
@@ -155,6 +159,12 @@ const ETIQUETA_VACIO: Record<string, string> = {
   solicitudes: 'solicitudes de credito',
   aportaciones: 'aportaciones programadas',
   habitos: 'habitos registrados',
+  metas: 'metas de ahorro',
+  cuentas: 'cuentas',
+  'compras-tarjeta': 'compras registradas en tus tarjetas',
+  siniestros: 'siniestros reportados',
+  diagnostico: 'un diagnostico financiero registrado',
+  'perfil-inversion': 'un perfil de inversion registrado',
 };
 
 /**
@@ -343,6 +353,73 @@ export function buildA2uiTools(userId: string, tablero: WidgetTablero[] = []) {
         }));
       }
 
+      if (fuente === 'metas') {
+        const metas = await getMetasUsuario(userId);
+        return metas.map((m) => ({
+          principal: m.titulo,
+          secundario: `${formatoMXN.format(m.montoActual)} de ${formatoMXN.format(m.montoObjetivo)}`,
+          valor: `${m.porcentaje}%`,
+          estatus: m.estatus === 'archivada' ? 'archivada' : undefined,
+        }));
+      }
+
+      if (fuente === 'cuentas') {
+        const cuentas = await getCuentasUsuario(userId);
+        return cuentas.map((c) => ({
+          principal: c.alias,
+          secundario: c.tipo,
+          valor: formatoMXN.format(c.saldo),
+        }));
+      }
+
+      if (fuente === 'compras-tarjeta') {
+        const compras = await getComprasTarjeta(userId);
+        return compras.map((c) => ({
+          principal: c.descripcion,
+          secundario: c.mesesMsi
+            ? `${c.mesesMsi} meses sin intereses`
+            : new Date(c.fecha).toLocaleDateString('es-MX'),
+          valor: formatoMXN.format(c.monto),
+        }));
+      }
+
+      if (fuente === 'siniestros') {
+        const siniestros = await getSiniestrosUsuario(userId);
+        return siniestros.map((s) => ({
+          principal: s.descripcion,
+          secundario: `Seguro de ${s.tipoPoliza} - ${new Date(s.fecha).toLocaleDateString('es-MX')}`,
+          valor: s.montoReclamado == null ? undefined : formatoMXN.format(s.montoReclamado),
+          estatus: s.estatus,
+        }));
+      }
+
+      // Estos dos dominios no son listas -- son un registro unico por
+      // usuario. Se regresan como un renglon solo para reusar el mismo
+      // componente ListaDatos en vez de crear uno nuevo para un solo dato.
+      if (fuente === 'diagnostico') {
+        const diagnostico = await getDiagnosticoFinanciero(userId);
+        if (!diagnostico) return [];
+        return [
+          {
+            principal: 'Diagnostico financiero',
+            secundario: new Date(diagnostico.fecha).toLocaleDateString('es-MX'),
+            valor: `${diagnostico.puntaje}/100`,
+          },
+        ];
+      }
+
+      if (fuente === 'perfil-inversion') {
+        const perfil = await getPerfilInversion(userId);
+        if (!perfil) return [];
+        return [
+          {
+            principal: 'Perfil de inversion',
+            secundario: `Horizonte: ${perfil.horizonteAnios} anios`,
+            valor: perfil.toleranciaRiesgo,
+          },
+        ];
+      }
+
       const habitos = await getHabitosFinancieros(userId);
       return habitos.map((h) => ({
         principal: h.habito,
@@ -358,9 +435,12 @@ export function buildA2uiTools(userId: string, tablero: WidgetTablero[] = []) {
         'registrado. Usala siempre que pregunte "cuales son mis...", "que ' +
         'tengo...", "muestrame mis..." sobre: contactos de pago, historial de ' +
         'transferencias, tarjetas de credito, portafolio de inversion, polizas ' +
-        'de seguro, solicitudes de credito, aportaciones programadas o habitos ' +
-        'financieros. NUNCA respondas que no tienes acceso a estos datos: los ' +
-        'tienes, estan aqui. Si el usuario pide UNO en concreto y no la lista ' +
+        'de seguro, solicitudes de credito, aportaciones programadas, habitos ' +
+        'financieros, metas de ahorro (todas, no una), cuentas bancarias, ' +
+        'compras a meses o de contado, siniestros de seguro, su diagnostico ' +
+        'financiero o su perfil de inversion. NUNCA respondas que no tienes ' +
+        'acceso a estos datos: los tienes, estan aqui. Si el usuario pide UNO ' +
+        'en concreto y no la lista ' +
         'completa ("solo la transferencia a Juan"), usa `filtro` y `limite` en ' +
         'vez de mandar la lista entera. ' +
         'Esta tool SOLO MUESTRA lo que ya existe. Si el usuario pide que HAGAS ' +

@@ -25,7 +25,15 @@ export async function POST(req: Request) {
   const perfil = await getUsuario(data.user.id);
 
   return jsonResponse({
-    usuario: { id: data.user.id, email: data.user.email, nombre: perfil?.nombre ?? null },
+    usuario: {
+      id: data.user.id,
+      email: data.user.email,
+      nombre: perfil?.nombre ?? null,
+      usuario: perfil?.usuario ?? null,
+      telefono: perfil?.telefono ?? null,
+      fechaNacimiento: perfil?.fechaNacimiento ?? null,
+      creadoEn: perfil?.creadoEn ?? null,
+    },
     session: { accessToken: data.session.access_token, refreshToken: data.session.refresh_token },
   });
 }

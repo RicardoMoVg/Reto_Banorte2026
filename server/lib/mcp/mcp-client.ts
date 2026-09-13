@@ -158,18 +158,67 @@ async function llamarTool<T>(
 export interface PerfilBanca {
   id: string;
   nombre: string;
+  usuario: string | null;
+  telefono: string | null;
+  fechaNacimiento: string | null;
+  /** ISO. De aquí sale "cliente desde" -- se formatea al mostrarlo, no aquí. */
+  creadoEn: string;
 }
 
-export async function crearUsuario(userId: string, nombre: string): Promise<PerfilBanca> {
-  if (USE_MOCK) return { id: userId, nombre };
+interface FilaUsuario {
+  id: string;
+  nombre: string;
+  usuario: string | null;
+  telefono: string | null;
+  fecha_nacimiento: string | null;
+  creado_en: string;
+}
 
-  return llamarTool<PerfilBanca>('crear_usuario', { userId, nombre });
+function aPerfilBanca(fila: FilaUsuario): PerfilBanca {
+  return {
+    id: fila.id,
+    nombre: fila.nombre,
+    usuario: fila.usuario,
+    telefono: fila.telefono,
+    fechaNacimiento: fila.fecha_nacimiento,
+    creadoEn: fila.creado_en,
+  };
+}
+
+const PERFIL_MOCK: PerfilBanca = {
+  id: 'mock-user',
+  nombre: 'Usuario Demo',
+  usuario: '@usuario.demo',
+  telefono: null,
+  fechaNacimiento: null,
+  creadoEn: new Date().toISOString(),
+};
+
+export async function crearUsuario(userId: string, nombre: string, usuario?: string): Promise<PerfilBanca> {
+  if (USE_MOCK) return { ...PERFIL_MOCK, id: userId, nombre, usuario: usuario ?? null };
+
+  const fila = await llamarTool<FilaUsuario>('crear_usuario', { userId, nombre, usuario });
+  return aPerfilBanca(fila);
 }
 
 export async function getUsuario(userId: string): Promise<PerfilBanca | null> {
-  if (USE_MOCK) return { id: userId, nombre: 'Usuario Demo' };
+  if (USE_MOCK) return { ...PERFIL_MOCK, id: userId };
 
-  return llamarTool<PerfilBanca | null>('get_usuario', { userId });
+  const fila = await llamarTool<FilaUsuario | null>('get_usuario', { userId });
+  return fila ? aPerfilBanca(fila) : null;
+}
+
+export async function actualizarPerfil(
+  userId: string,
+  cambios: { nombre?: string; usuario?: string; telefono?: string; fechaNacimiento?: string },
+): Promise<PerfilBanca | { error: string }> {
+  if (USE_MOCK) return { ...PERFIL_MOCK, id: userId, ...cambios };
+
+  const fila = await llamarTool<FilaUsuario | { error: string }>('actualizar_perfil', {
+    userId,
+    ...cambios,
+  });
+  return 'error' in fila ? fila : aPerfilBanca(fila);
 }
 
 export interface WidgetAnclado {

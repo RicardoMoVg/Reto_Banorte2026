@@ -74,13 +74,15 @@ Una ventana que sí sea un destino permanente va dentro de `(tabs)/`.
   (`lib/a2ui/AccionesProvider.tsx`) porque una función no se puede
   serializar dentro del JSON del protocolo.
 - `lib/sesion/` — estado de sesión y datos del titular (`SesionProvider`,
-  `useSesion`, `perfilDemo.ts`). **No es autenticación**: el backend no tiene
-  auth y usa un `userId` fijo. Cualquier credencial entra, la contraseña no
-  se guarda en ningún lado, y ni la sesión ni el perfil editado se
-  persisten. Lee el comentario de `SesionProvider.tsx` antes de tocarlo.
-  El perfil que leen las ventanas es `perfil` del provider, NO la constante
-  `PERFIL_DEMO` — esa es solo la semilla, y usarla directo hace que la
-  pantalla ignore lo que el usuario editó.
+  `useSesion`, `perfilDemo.ts`). El login/registro sí autentican contra
+  Supabase Auth, y `nombre`/`usuario`/`telefono`/`fechaNacimiento` viven en
+  Postgres (`usuarios`, vía `get_usuario`/`actualizar_perfil` del MCP) — el
+  correo lo administra Supabase Auth, no se edita desde el perfil. Lo único
+  que sigue solo en memoria es la SESIÓN (no hay `expo-secure-store` aún):
+  se pierde al recargar la app, no lo que ya se guardó. Lee el comentario
+  de `SesionProvider.tsx` antes de tocarlo. `perfilDemo.ts` ya no tiene
+  datos de ejemplo -- solo funciones de formato/validación (fechas,
+  teléfono, iniciales) que usan tanto Perfil como el login/registro.
 - `lib/a2ui/` — el mini-SDK: `useAgentStream` (fetch + parseo NDJSON),
   `AgentProvider` (monta un único stream en la raíz para que la conversación
   sobreviva al cambio de pestaña), `TableroProvider` (qué fijó el usuario en
