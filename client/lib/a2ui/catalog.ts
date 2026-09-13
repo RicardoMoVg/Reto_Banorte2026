@@ -3,15 +3,16 @@ import { RastreadorMetas } from '../../components/RastreadorMetas';
 import { TarjetaSaldo } from '../../components/TarjetaSaldo';
 import { ListaTransacciones } from '../../components/ListaTransacciones';
 import { ComparativoGastos } from '../../components/ComparativoGastos';
+import { ActionCardSelector } from '../../components/chat/ActionCardSelector';
+import { ConfirmarAccion } from '../../components/chat/ConfirmarAccion';
+import { PropuestaAhorro } from '../../components/chat/PropuestaAhorro';
+import { Confirmacion } from '../../components/Confirmacion';
+import { GraphSpline } from '../../components/GraphSpline';
 import { GraficoBarras_H } from '../../components/GraphBar_H';
 import { GraficoBarras_V } from '../../components/GraphBar_V';
 import { GraphCircle } from '../../components/GraphCircle';
 import { GraphSemiCircle } from '../../components/GraphSemiCircle';
-import { GraphSpline } from '../../components/GraphSpline';
 import { WidgetCompromiso } from '../../components/WidgetCompromiso';
-import { ActionCardSelector } from '../../components/chat/ActionCardSelector';
-import { ConfirmarAccion } from '../../components/chat/ConfirmarAccion';
-import { PropuestaAhorro } from '../../components/chat/PropuestaAhorro';
 import { TarjetaAccion } from '../../components/chat/TarjetaAccion';
 
 /**
@@ -29,11 +30,15 @@ export const catalogoA2ui: Record<string, ComponentType<any>> = {
   TarjetaSaldo,
   ListaTransacciones,
   ComparativoGastos,
+  Confirmacion,
 
-  // Graficas genericas: todas reciben la MISMA forma de props
-  // ({titulo, mensajeAgente, categorias}), que es lo que permite que una
-  // sola tool (`mostrarGrafica`) alimente a las cinco -- el prerrequisito
-  // de constitution.md 4.4. El modelo elige cual, no el codigo.
+  // Graficas registradas DOS veces a proposito. Los nombres crudos
+  // (GraphSpline, GraficoBarras_H) los emiten las tools de la rama de
+  // datos; los semanticos (GraficaPay, GraficaBarras...) los emite
+  // `mostrarGrafica`, donde el MODELO elige la forma. Mismo componente,
+  // dos llaves -- quitar cualquiera rompe una de las dos tools.
+  GraphSpline,
+  GraficoBarras_H,
   GraficaPay: GraphCircle,
   GraficaDona: GraphSemiCircle,
   GraficaBarras: GraficoBarras_V,
@@ -45,11 +50,11 @@ export const catalogoA2ui: Record<string, ComponentType<any>> = {
   PropuestaAhorro,
   ConfirmarAccion,
   ActionCardSelector,
+  // Componible: el agente arma la tarjeta con piezas (chat/elementos.tsx).
+  TarjetaAccion,
 
   // Destino de la "metamorfosis": lo que queda de una tarjeta de accion
-  // aplicada, ya fijado en Inicio. No es un bloque que el agente mande --
-  // lo crea el cliente al aplicar (ver ActionCardSelector).
+  // aplicada, ya fijado en Inicio. No lo manda el agente -- lo crea el
+  // cliente al aplicar (ver ActionCardSelector).
   WidgetCompromiso,
-  // Componible: el agente arma la tarjeta con piezas (components/chat/elementos.tsx).
-  TarjetaAccion,
 };
