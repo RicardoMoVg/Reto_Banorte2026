@@ -585,6 +585,51 @@ export async function venderPosicion(
 // Crédito
 // ============================================================
 
+export interface ProductoCredito {
+  id: string;
+  tipo: string;
+  nombre: string;
+  tasaReferencia: number;
+  montoMaximo: number;
+  plazoMaximoMeses: number;
+  descripcion: string | null;
+}
+
+const PRODUCTOS_CREDITO_MOCK: ProductoCredito[] = [
+  { id: 'prod-personal', tipo: 'personal', nombre: 'Crédito Personal Banorte', tasaReferencia: 32.4, montoMaximo: 300000, plazoMaximoMeses: 48, descripcion: 'Sin garantía, para cualquier fin' },
+  { id: 'prod-hipotecario', tipo: 'hipotecario', nombre: 'Crédito Hipotecario Banorte', tasaReferencia: 11.8, montoMaximo: 5000000, plazoMaximoMeses: 240, descripcion: 'Para compra de vivienda' },
+  { id: 'prod-automotriz', tipo: 'automotriz', nombre: 'Crédito Automotriz Banorte', tasaReferencia: 14.5, montoMaximo: 800000, plazoMaximoMeses: 60, descripcion: 'Para compra de auto nuevo o seminuevo' },
+  { id: 'prod-tarjeta', tipo: 'tarjeta', nombre: 'Tarjeta de Crédito Banorte', tasaReferencia: 32.4, montoMaximo: 200000, plazoMaximoMeses: 1, descripcion: 'Línea revolvente, sin plazo fijo' },
+];
+
+export async function getProductosCredito(tipo?: string): Promise<ProductoCredito[]> {
+  if (USE_MOCK) {
+    return tipo ? PRODUCTOS_CREDITO_MOCK.filter((p) => p.tipo === tipo) : PRODUCTOS_CREDITO_MOCK;
+  }
+
+  const rows = await llamarTool<
+    Array<{
+      id: string;
+      tipo: string;
+      nombre: string;
+      tasa_referencia: string | number;
+      monto_maximo: string | number;
+      plazo_maximo_meses: number;
+      descripcion: string | null;
+    }>
+  >('get_productos_credito', { tipo });
+
+  return rows.map((p) => ({
+    id: p.id,
+    tipo: p.tipo,
+    nombre: p.nombre,
+    tasaReferencia: Number(p.tasa_referencia),
+    montoMaximo: Number(p.monto_maximo),
+    plazoMaximoMeses: p.plazo_maximo_meses,
+    descripcion: p.descripcion,
+  }));
+}
+
 export interface TarjetaCredito {
   id: string;
   alias: string;

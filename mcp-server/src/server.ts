@@ -445,6 +445,35 @@ server.tool(
 // --- Crédito ---
 
 server.tool(
+  'get_productos_credito',
+  'Obtiene el catálogo de productos de crédito que ofrece el banco (no lo que ya tiene el usuario) -- para ver qué hay disponible antes de solicitar.',
+  {
+    tipo: z.enum(['personal', 'hipotecario', 'automotriz', 'tarjeta']).optional().describe('Filtra por tipo de producto'),
+  },
+  async ({ tipo }) => {
+    const condiciones = ['true'];
+    const valores: unknown[] = [];
+
+    if (tipo) {
+      valores.push(tipo);
+      condiciones.push(`tipo = $${valores.length}`);
+    }
+
+    const { rows } = await pool.query(
+      `select id, tipo, nombre, tasa_referencia, monto_maximo, plazo_maximo_meses, descripcion
+       from productos_credito
+       where ${condiciones.join(' and ')}
+       order by tasa_referencia asc`,
+      valores,
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows) }],
+    };
+  },
+);
+
+server.tool(
   'get_tarjetas_credito',
   'Obtiene las tarjetas de crédito del usuario: límite, saldo usado y tasa anual.',
   {

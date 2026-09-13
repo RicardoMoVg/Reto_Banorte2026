@@ -129,6 +129,19 @@ alter table posiciones_portafolio add column if not exists activa boolean not nu
 -- 3. Crédito — precalificación, amortización, refinanciamiento
 -- ============================================================
 
+-- Catálogo de productos de crédito ofrecidos por el banco (no lo que ya
+-- tiene el usuario) -- equivalente a `instrumentos` en inversiones, para
+-- poder ver qué hay disponible antes de solicitar.
+create table if not exists productos_credito (
+  id text primary key,
+  tipo text not null check (tipo in ('personal', 'hipotecario', 'automotriz', 'tarjeta')),
+  nombre text not null,
+  tasa_referencia numeric not null, -- % anual indicativo
+  monto_maximo numeric not null check (monto_maximo > 0),
+  plazo_maximo_meses integer not null check (plazo_maximo_meses > 0),
+  descripcion text
+);
+
 create table if not exists tarjetas_credito (
   id text primary key,
   usuario_id text not null references usuarios(id),
