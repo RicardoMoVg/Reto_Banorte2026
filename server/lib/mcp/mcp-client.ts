@@ -331,6 +331,45 @@ export async function getCuentasUsuario(userId: string): Promise<Cuenta[]> {
   return rows.map((c) => ({ id: c.id, tipo: c.tipo, alias: c.alias, saldo: Number(c.saldo) }));
 }
 
+export async function crearTransaccion(
+  userId: string,
+  cuentaId: string,
+  descripcion: string,
+  monto: number,
+  categoria?: string,
+): Promise<Transaccion | { error: string }> {
+  if (USE_MOCK) {
+    const cuenta = CUENTAS_MOCK.find((c) => c.id === cuentaId);
+    if (!cuenta) return { error: 'Cuenta no encontrada o no pertenece al usuario.' };
+
+    const transaccion: Transaccion = {
+      id: `tx-mock-${TRANSACCIONES_MOCK.length + 1}`,
+      descripcion,
+      monto,
+      fecha: new Date().toISOString(),
+      categoria: categoria ?? '',
+    };
+    TRANSACCIONES_MOCK.push(transaccion);
+    cuenta.saldo += monto;
+    return transaccion;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; descripcion: string; monto: string | number; categoria: string; fecha: string }
+  >('crear_transaccion', { userId, cuentaId, descripcion, monto, categoria });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    descripcion: resultado.descripcion,
+    monto: Number(resultado.monto),
+    categoria: resultado.categoria,
+    fecha: resultado.fecha,
+  };
+}
+
 // ============================================================
 // Inversiones
 // ============================================================

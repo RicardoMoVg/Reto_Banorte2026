@@ -201,6 +201,41 @@ server.tool(
   },
 );
 
+server.tool(
+  'crear_transaccion',
+  'Registra un movimiento (gasto o ingreso) en una cuenta del usuario. El saldo de la cuenta se actualiza solo (trigger).',
+  {
+    userId: z.string().describe('Id del usuario'),
+    cuentaId: z.string().describe('Id de la cuenta donde se registra (debe pertenecer al usuario)'),
+    descripcion: z.string().describe('Descripción del movimiento, ej. "Café Starbucks"'),
+    monto: z.number().describe('Monto con signo: negativo para gasto, positivo para ingreso'),
+    categoria: z.string().optional().describe('Categoría del movimiento, ej. "comida", "ingreso"'),
+  },
+  async ({ userId, cuentaId, descripcion, monto, categoria }) => {
+    const cuenta = await pool.query(`select id from cuentas where id = $1 and usuario_id = $2`, [
+      cuentaId,
+      userId,
+    ]);
+
+    if (cuenta.rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Cuenta no encontrada o no pertenece al usuario.' }) }],
+      };
+    }
+
+    const { rows } = await pool.query(
+      `insert into transacciones (id, usuario_id, cuenta_id, descripcion, monto, categoria)
+       values ('tx-' || gen_random_uuid(), $1, $2, $3, $4, $5)
+       returning id, descripcion, monto, categoria, fecha`,
+      [userId, cuentaId, descripcion, monto, categoria ?? null],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
 // --- Inversiones ---
 
 server.tool(
