@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PantallaMarca } from '../components/ui/PantallaMarca';
+import { ErrorApi } from '../lib/api/rest';
 import { CORREO_VALIDO } from '../lib/sesion/perfilDemo';
 import { useSesion } from '../lib/sesion/SesionProvider';
 import { ANCHO_FORMULARIO, colores, espacio, radio, vidrio } from '../lib/ui/theme';
@@ -30,9 +31,9 @@ const LEMA = 'La app bancaria hecha para ti.';
  *
  * Puerta de entrada visual a la app: `app/_layout.tsx` la protege con
  * `<Stack.Protected>`, así que es lo único alcanzable mientras no haya
- * sesión. Cualquier credencial con forma válida entra — ver
- * `lib/sesion/SesionProvider.tsx` para por qué esto no es (ni pretende
- * ser) autenticación.
+ * sesión. Las credenciales se validan de verdad contra Supabase Auth (ver
+ * `lib/sesion/SesionProvider.tsx` y `server/app/api/auth/*`) -- ya no es
+ * una puerta demo.
  *
  * Dos desviaciones conscientes respecto al mockup, ambas por contraste:
  * el texto del botón va en azul profundo y no en blanco (blanco sobre
@@ -40,7 +41,7 @@ const LEMA = 'La app bancaria hecha para ti.';
  * despegarse del menta del degradado.
  */
 export default function Login() {
-  const { iniciarSesion } = useSesion();
+  const { iniciarSesion, registrarse, cargando } = useSesion();
   const insets = useSafeAreaInsets();
   const refContrasena = useRef<TextInput>(null);
 
@@ -65,7 +66,13 @@ export default function Login() {
     };
   }
 
-  function handleEntrar() {
+  /** Mensaje legible para el usuario -- `ErrorApi.mensaje` ya viene del `{error}` que manda server/. */
+  function mensajeDeError(err: unknown): string {
+    if (err instanceof ErrorApi) return err.message;
+    return 'No se pudo conectar con el servidor. Intenta de nuevo.';
+  }
+
+  async function handleEntrar() {
     setAviso(null);
 
     if (!CORREO_VALIDO.test(correo.trim())) {
@@ -78,9 +85,35 @@ export default function Login() {
     }
 
     setError(null);
-    // Solo viaja el correo: la contraseña se queda en este estado local y
-    // se descarta cuando la pantalla se desmonta.
-    iniciarSesion(correo.trim());
+    try {
+      await iniciarSesion(correo.trim(), contrasena);
+    } catch (err) {
+      setError(mensajeDeError(err));
+    }
+  }
+
+  async function handleRegistro() {
+    setError(null);
+    setAviso(null);
+
+    if (!CORREO_VALIDO.test(correo.trim())) {
+      setError('Escribe un correo electrónico válido para registrarte.');
+      return;
+    }
+    if (!contrasena || contrasena.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    try {
+      const { requiereConfirmacion } = await registrarse(correo.trim(), contrasena);
+      if (requiereConfirmacion) {
+        setAviso('Cuenta creada. Revisa tu correo para confirmarla antes de entrar.');
+      }
+      // Si no requiere confirmación, registrarse() ya abrió la sesión.
+    } catch (err) {
+      setError(mensajeDeError(err));
+    }
   }
 
   return (
@@ -159,10 +192,15 @@ export default function Login() {
                 // nombre: react-native-web no deriva la etiqueta del <Text>
                 // hijo cuando el Pressable trae un `style` como función.
                 accessibilityLabel="Iniciar sesión"
+                disabled={cargando}
                 onPress={handleEntrar}
-                style={({ pressed }) => [styles.boton, pressed && styles.botonPresionado]}
+                style={({ pressed }) => [
+                  styles.boton,
+                  pressed && styles.botonPresionado,
+                  cargando && styles.botonDeshabilitado,
+                ]}
               >
-                <Text style={styles.botonTexto}>Iniciar Sesión</Text>
+                <Text style={styles.botonTexto}>{cargando ? 'Entrando…' : 'Iniciar Sesión'}</Text>
               </Pressable>
 
               <View style={styles.pie}>
@@ -171,9 +209,9 @@ export default function Login() {
                   accessibilityRole="link"
                   accessibilityLabel="Regístrate"
                   hitSlop={espacio.sm}
+                  disabled={cargando}
                   onPress={() => {
-                    setError(null);
-                    setAviso('El registro llega en la siguiente iteración.');
+                    handleRegistro();
                   }}
                 >
                   <Text style={styles.pieEnlace}>Regístrate</Text>
@@ -188,8 +226,8 @@ export default function Login() {
             </View>
 
             <Text style={styles.demo}>
-              Demo del Reto Banorte × Tec 2026. No se conecta a ninguna cuenta real ni se envían
-              tus datos a ningún servidor.
+              Demo del Reto Banorte × Tec 2026. No es un banco real ni está afiliada a Banorte —
+              tu cuenta se crea solo para esta demostración.
             </Text>
           </View>
         </ScrollView>
@@ -314,6 +352,7 @@ const styles = StyleSheet.create({
     paddingVertical: espacio.md,
   },
   botonPresionado: { opacity: 0.85 },
+  botonDeshabilitado: { opacity: 0.6 },
   botonTexto: { fontSize: 15, fontWeight: '700', color: colores.textoSobreAcento },
 
   pie: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' },

@@ -14,12 +14,15 @@
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
 
 /**
- * Token del usuario, cuando exista login real.
+ * Token del usuario. `SesionProvider.iniciarSesion`/`registrarse` lo llenan
+ * con el `accessToken` real que regresa Supabase Auth; `cerrarSesion` lo
+ * vuelve a poner en `null`.
  *
- * Hoy siempre es null: el login es una puerta demo que no emite token, y
- * el servidor atiende las peticiones sin `Authorization` como `demo-user`
- * (ver AUTH_USUARIO_SIN_TOKEN en server/.env). Cuando el login emita
- * tokens, esto se llena al iniciar sesión y deja de haber excepción.
+ * Mientras no haya sesión (recién abierta la app, o en pantallas que no
+ * requieren login) sigue siendo `null` -- ahí el servidor solo responde si
+ * tiene `AUTH_USUARIO_SIN_TOKEN` prendido en su `.env` (ver
+ * server/lib/auth/supabase.ts), que ya se puede apagar en cuanto el login
+ * esté probado.
  */
 let token: string | null = null;
 
@@ -55,6 +58,45 @@ async function pedir<T>(ruta: string, init?: RequestInit): Promise<T> {
   }
 
   return cuerpo as T;
+}
+
+export interface UsuarioApi {
+  id: string;
+  email: string | null;
+  nombre: string | null;
+}
+
+export interface SesionApi {
+  accessToken: string;
+  refreshToken: string;
+}
+
+/** `POST /api/auth/login` -- credenciales inválidas llegan como `ErrorApi` (401). */
+export function login(email: string, password: string) {
+  return pedir<{ usuario: UsuarioApi; session: SesionApi }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+/**
+ * `POST /api/auth/registro`. `session` viene `null` si el proyecto de
+ * Supabase pide confirmar el correo -- en ese caso `requiereConfirmacion`
+ * es `true` y todavía no hay con qué llamar `fijarToken`.
+ */
+export function registrar(email: string, password: string, nombre?: string) {
+  return pedir<{ usuario: UsuarioApi; session: SesionApi | null; requiereConfirmacion: boolean }>(
+    '/api/auth/registro',
+    { method: 'POST', body: JSON.stringify({ email, password, nombre }) },
+  );
+}
+
+/** `POST /api/auth/logout`. Los tokens van en el body -- ver la ruta en server/. */
+export function logout(accessToken: string, refreshToken: string) {
+  return pedir<{ ok: true }>('/api/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ accessToken, refreshToken }),
+  });
 }
 
 export interface TransaccionApi {
