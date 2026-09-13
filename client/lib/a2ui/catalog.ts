@@ -8,6 +8,7 @@ import { GraficoBarras_V } from '../../components/GraphBar_V';
 import { GraphCircle } from '../../components/GraphCircle';
 import { GraphSemiCircle } from '../../components/GraphSemiCircle';
 import { GraphSpline } from '../../components/GraphSpline';
+import { WidgetCompromiso } from '../../components/WidgetCompromiso';
 import { ActionCardSelector } from '../../components/chat/ActionCardSelector';
 import { ConfirmarAccion } from '../../components/chat/ConfirmarAccion';
 import { PropuestaAhorro } from '../../components/chat/PropuestaAhorro';
@@ -44,6 +45,11 @@ export const catalogoA2ui: Record<string, ComponentType<any>> = {
   PropuestaAhorro,
   ConfirmarAccion,
   ActionCardSelector,
+
+  // Destino de la "metamorfosis": lo que queda de una tarjeta de accion
+  // aplicada, ya fijado en Inicio. No es un bloque que el agente mande --
+  // lo crea el cliente al aplicar (ver ActionCardSelector).
+  WidgetCompromiso,
   // Componible: el agente arma la tarjeta con piezas (components/chat/elementos.tsx).
   TarjetaAccion,
 };

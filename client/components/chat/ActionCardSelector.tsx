@@ -2,13 +2,55 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAcciones } from '../../lib/a2ui/AccionesProvider';
+import { useTableroOpcional } from '../../lib/a2ui/TableroProvider';
 import { textoSobre } from '../../lib/ui/contraste';
-import { COLOR_INTENCION, colores, espacio, radio, tipografia } from '../../lib/ui/theme';
+import {
+  COLOR_INTENCION,
+  colores,
+  espacio,
+  radio,
+  tipografia,
+  type Intencion,
+} from '../../lib/ui/theme';
 import { AcuseDeAccion } from './AcuseDeAccion';
 import { ListaOpciones, type OpcionSeleccionable } from './elementos';
 import type { PropsDeAccion } from './tipos';
 
 export type { OpcionSeleccionable };
+
+/**
+ * Lo que viaja al dashboard cuando el usuario aplica una opción: la
+ * "metamorfosis" de una tarjeta de decisión a un widget de compromiso.
+ *
+ * Va TIPADO y no como `any` a propósito. Es el contrato entre esta tarjeta
+ * y el tablero, y el tablero acabará persistiéndolo en Postgres
+ * (`dashboard_widgets`): si la forma es `any`, el día que alguien cambie un
+ * campo aquí nada avisa y el widget se rompe en silencio. Un handler
+ * declarado `(d: any) => void` sigue siendo asignable a esta prop, así que
+ * tipar no le cierra la puerta a nadie.
+ *
+ * Ojo con `valorDestacado`: es un string ya formateado por el servidor, no
+ * un número. Esta tarjeta nunca calcula ni reformatea cifras
+ * (`constitution.md` 4.2) — solo las pasa tal cual las recibió.
+ */
+export interface DatosDashboard {
+  /** Id de la acción que originó el compromiso. Evita anclarlo dos veces. */
+  idAccion: string;
+  /** Cómo nombrar el compromiso dentro de una frase, sin cifras. */
+  etiqueta: string;
+  /** Título de la tarjeta que lo propuso. */
+  titulo: string;
+  intencion: Intencion;
+  /** La opción elegida, resumida. */
+  opcion: {
+    id: string;
+    tituloOpcion: string;
+    subtitulo?: string;
+    valorDestacado?: string;
+  };
+  /** ISO del momento en que se aplicó. */
+  fechaISO: string;
+}
 
 export interface ActionCardSelectorProps extends PropsDeAccion {
   titulo: string;
@@ -25,6 +67,19 @@ export interface ActionCardSelectorProps extends PropsDeAccion {
    * visual, sin provider alrededor.
    */
   onAplicar?: (opcionSeleccionada: string) => void;
+  /**
+   * Se dispara al aplicar, con el resumen de lo elegido, para que la app
+   * ancle el compromiso como widget en Inicio ("metamorfosis al
+   * dashboard").
+   *
+   * Es opcional y tiene un camino por defecto: sin él, la tarjeta ancla
+   * ella misma vía `<TableroProvider>`. La prop existe para cuando la app
+   * quiera decidir otra cosa (mandarlo al backend, pedir confirmación
+   * extra, no anclar nada). Si se pasa, gana sobre el anclado automático:
+   * no tendría sentido que la app tomara el control y además se anclara
+   * por su cuenta.
+   */
+  onSuccessPin?: (datosDashboard: DatosDashboard) => void;
   mensajeAgente: string;
 }
 
@@ -61,10 +116,12 @@ export function ActionCardSelector({
   textoAplicar = 'Aplicar',
   resultado,
   onAplicar,
+  onSuccessPin,
   mensajeAgente,
 }: ActionCardSelectorProps) {
   const [seleccionada, setSeleccionada] = useState<string | null>(null);
   const acciones = useAcciones();
+  const tablero = useTableroOpcional();
 
   const color = COLOR_INTENCION[intencion];
   const estado = acciones?.estadoDe(idAccion) ?? 'pendiente';
@@ -84,14 +141,53 @@ export function ActionCardSelector({
     const opcion = opciones.find((o) => o.id === seleccionada);
     if (!opcion) return;
 
+    // 1. Resolver la tarjeta. Esto pasa SIEMPRE, con o sin handlers: es lo
+    //    que la deja en estado resuelto y le avisa al agente.
     if (onAplicar) {
       onAplicar(seleccionada);
+    } else {
+      // Al agente le llega qué eligió el usuario, en texto que él mismo
+      // redactó — nunca una cifra (constitution.md 4.4).
+      acciones?.responder(idAccion, 'aceptada', `${etiqueta}: ${opcion.tituloOpcion}`);
+    }
+
+    // 2. Metamorfosis al dashboard: el compromiso se vuelve un widget.
+    const datosDashboard: DatosDashboard = {
+      idAccion,
+      etiqueta,
+      titulo,
+      intencion,
+      opcion: {
+        id: opcion.id,
+        tituloOpcion: opcion.tituloOpcion,
+        subtitulo: opcion.subtitulo,
+        valorDestacado: opcion.valorDestacado,
+      },
+      fechaISO: new Date().toISOString(),
+    };
+
+    if (onSuccessPin) {
+      onSuccessPin(datosDashboard);
       return;
     }
 
-    // Al agente le llega qué eligió el usuario, en texto que él mismo
-    // redactó — nunca una cifra (constitution.md 4.4).
-    acciones?.responder(idAccion, 'aceptada', `${etiqueta}: ${opcion.tituloOpcion}`);
+    // Sin handler, la tarjeta ancla sola si hay tablero alrededor. Misma
+    // lógica que `onAplicar` con AccionesProvider: la prop es el override,
+    // el contexto es el camino normal — un componente que nace de un JSON
+    // de red no puede recibir funciones.
+    tablero?.anclar({
+      id: `compromiso-${idAccion}`,
+      nombre: 'WidgetCompromiso',
+      props: {
+        titulo,
+        opcion: opcion.tituloOpcion,
+        detalle: opcion.subtitulo,
+        valor: opcion.valorDestacado,
+        intencion,
+        fechaISO: datosDashboard.fechaISO,
+        mensajeAgente: resultado,
+      },
+    });
   }
 
   const puedeAplicar = seleccionada !== null;

@@ -71,6 +71,15 @@ export function TableroProvider({ children }: { children: ReactNode }) {
   return <TableroContext.Provider value={valor}>{children}</TableroContext.Provider>;
 }
 
+/**
+ * Igual que `useTablero`, pero devuelve `null` fuera del provider en vez
+ * de reventar. Para componentes que se pueden montar sueltos (una pantalla
+ * de pruebas, un catálogo visual) y que solo quieren anclar SI se puede.
+ */
+export function useTableroOpcional(): ContextoTablero | null {
+  return useContext(TableroContext);
+}
+
 export function useTablero(): ContextoTablero {
   const contexto = useContext(TableroContext);
   if (!contexto) {

@@ -119,11 +119,11 @@ export default function Inicio() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Quitar ${b.nombre} del inicio`}
-                  hitSlop={espacio.sm}
                   onPress={() => desanclar(b.id)}
                   style={({ pressed }) => [styles.quitar, pressed && styles.presionado]}
                 >
-                  <Ionicons name="close" size={14} color={colores.marca} />
+                  <Ionicons name="close" size={13} color={colores.textoInverso} />
+                  <Text style={styles.quitarTexto}>Quitar de Inicio</Text>
                 </Pressable>
               </View>
             ))}
@@ -208,23 +208,28 @@ const styles = StyleSheet.create({
 
   scroll: { paddingHorizontal: espacio.lg, gap: espacio.xl },
   bloques: { gap: espacio.md },
-  /** Quitar del tablero: chrome del tablero, no del bloque. Ningún bloque
-   *  A2UI tiene que saber que existe un tablero. */
+  /**
+   * Quitar del tablero: chrome del tablero, no del bloque. Ningún bloque
+   * A2UI tiene que saber que existe un tablero.
+   *
+   * Va DEBAJO de la tarjeta y no encimada en una esquina: superpuesto
+   * chocaba con el contenido del bloque (la fecha del WidgetCompromiso
+   * quedaba tapada), y el tablero no puede saber qué hay en cada esquina
+   * de un bloque que no conoce. Debajo nunca colisiona, sin importar qué
+   * bloque sea.
+   */
   quitar: {
-    position: 'absolute',
-    // DENTRO de la tarjeta, no encima del borde: con offsets negativos el
-    // contenedor del scroll la recortaba y solo se veia media X.
-    top: espacio.sm,
-    right: espacio.sm,
-    width: 26,
-    height: 26,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    alignSelf: 'flex-end',
+    gap: espacio.xs,
+    marginTop: espacio.sm,
     borderRadius: radio.completo,
-    borderWidth: 1,
-    borderColor: colores.borde,
-    backgroundColor: colores.superficie,
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    paddingHorizontal: espacio.md,
+    paddingVertical: espacio.xs,
   },
+  quitarTexto: { fontSize: 11, fontWeight: '600', color: colores.textoInverso },
 
   vacio: { alignItems: 'center', gap: espacio.sm, paddingVertical: espacio.sm },
   vacioTitulo: { ...tipografia.cuerpo, fontWeight: '700', marginTop: espacio.xs },
