@@ -2,33 +2,13 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAcciones } from '../../lib/a2ui/AccionesProvider';
-import { conAlfa, textoSobre } from '../../lib/ui/contraste';
+import { textoSobre } from '../../lib/ui/contraste';
 import { COLOR_INTENCION, colores, espacio, radio, tipografia } from '../../lib/ui/theme';
 import { AcuseDeAccion } from './AcuseDeAccion';
+import { ListaOpciones, type OpcionSeleccionable } from './elementos';
 import type { PropsDeAccion } from './tipos';
 
-export interface OpcionSeleccionable {
-  id: string;
-  /** Etiqueta corta de la opción: "28 días", "Recomendado", "Semanal". */
-  tituloOpcion: string;
-  /** Qué implica elegirla, en una línea. */
-  subtitulo?: string;
-  /**
-   * La cifra de la opción, YA FORMATEADA como texto por el servidor
-   * ("+$412", "$1,850 al mes").
-   *
-   * Es string y no number a propósito: aquí caben rendimientos, comisiones
-   * y límites con formatos distintos, y quien tiene el dato real decide
-   * cómo se escribe. El modelo nunca la redacta — sale de una tool del MCP
-   * (constitution.md 4.2).
-   */
-  valorDestacado?: string;
-  /**
-   * Advertencia de esta opción en particular, ej. el pago mínimo de una
-   * tarjeta: se puede elegir, pero conviene saber qué cuesta.
-   */
-  advertencia?: string;
-}
+export type { OpcionSeleccionable };
 
 export interface ActionCardSelectorProps extends PropsDeAccion {
   titulo: string;
@@ -120,66 +100,14 @@ export function ActionCardSelector({
     <View style={styles.card}>
       <Text style={styles.titulo}>{titulo}</Text>
 
-      <View
-        style={styles.opciones}
-        accessibilityRole="radiogroup"
-        accessibilityLabel={titulo}
-      >
-        {opciones.map((opcion) => {
-          const activa = opcion.id === seleccionada;
-
-          return (
-            <Pressable
-              key={opcion.id}
-              accessibilityRole="radio"
-              // `aria-checked` y no `accessibilityState={{checked}}`:
-              // react-native-web 0.21 no traduce el segundo a ARIA, y RN
-              // acepta los props `aria-*` en nativo desde 0.71.
-              aria-checked={activa}
-              accessibilityLabel={[opcion.tituloOpcion, opcion.subtitulo, opcion.valorDestacado]
-                .filter(Boolean)
-                .join('. ')}
-              onPress={() => setSeleccionada(opcion.id)}
-              style={({ pressed }) => [
-                styles.opcion,
-                activa
-                  ? { borderColor: color, backgroundColor: conAlfa(color, 0.08) }
-                  : styles.opcionInactiva,
-                pressed && !activa && styles.opcionPresionada,
-              ]}
-            >
-              <View style={styles.opcionTexto}>
-                <View style={styles.opcionTitulo}>
-                  {activa ? <Ionicons name="checkmark-circle" size={16} color={color} /> : null}
-                  <Text style={[styles.tituloOpcion, activa && { color }]} numberOfLines={1}>
-                    {opcion.tituloOpcion}
-                  </Text>
-                </View>
-
-                {opcion.subtitulo ? (
-                  <Text style={styles.subtitulo} numberOfLines={2}>
-                    {opcion.subtitulo}
-                  </Text>
-                ) : null}
-
-                {opcion.advertencia ? (
-                  <View style={styles.advertencia}>
-                    <Ionicons name="alert-circle-outline" size={13} color={colores.textoApoyo} />
-                    <Text style={styles.advertenciaTexto} numberOfLines={2}>
-                      {opcion.advertencia}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-
-              {opcion.valorDestacado ? (
-                <Text style={[styles.valor, activa && { color }]} numberOfLines={1}>
-                  {opcion.valorDestacado}
-                </Text>
-              ) : null}
-            </Pressable>
-          );
-        })}
+      <View style={styles.opciones}>
+        <ListaOpciones
+          opciones={opciones}
+          color={color}
+          seleccionada={seleccionada}
+          onSeleccionar={setSeleccionada}
+          etiquetaGrupo={titulo}
+        />
       </View>
 
       <Text style={styles.mensaje}>{mensajeAgente}</Text>
@@ -217,28 +145,7 @@ const styles = StyleSheet.create({
   },
   titulo: { fontSize: 16, fontWeight: '700', color: colores.texto, lineHeight: 22 },
 
-  opciones: { gap: espacio.sm, marginTop: espacio.lg },
-  opcion: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: espacio.md,
-    // Constante en los dos estados: si cambiara al seleccionar, la lista
-    // se movería un pixel en cada toque.
-    borderWidth: 2,
-    borderRadius: radio.md,
-    paddingHorizontal: espacio.lg,
-    paddingVertical: espacio.md,
-  },
-  opcionInactiva: { borderColor: colores.borde, backgroundColor: colores.superficie },
-  opcionPresionada: { backgroundColor: colores.superficieSutil },
-  opcionTexto: { flexShrink: 1, gap: 2 },
-  opcionTitulo: { flexDirection: 'row', alignItems: 'center', gap: espacio.xs },
-  tituloOpcion: { flexShrink: 1, fontSize: 14, fontWeight: '600', color: colores.texto },
-  subtitulo: { ...tipografia.pie, color: colores.textoApoyo },
-  advertencia: { flexDirection: 'row', alignItems: 'center', gap: espacio.xs, marginTop: 2 },
-  advertenciaTexto: { flexShrink: 1, fontSize: 11, lineHeight: 15, color: colores.textoApoyo },
-  valor: { fontSize: 15, fontWeight: '700', color: colores.texto, textAlign: 'right' },
+  opciones: { marginTop: espacio.lg },
 
   mensaje: { ...tipografia.pie, marginTop: espacio.md, color: colores.textoApoyo },
 

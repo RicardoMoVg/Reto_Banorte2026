@@ -6,6 +6,7 @@ import { ComparativoGastos } from '../../components/ComparativoGastos';
 import { ActionCardSelector } from '../../components/chat/ActionCardSelector';
 import { ConfirmarAccion } from '../../components/chat/ConfirmarAccion';
 import { PropuestaAhorro } from '../../components/chat/PropuestaAhorro';
+import { TarjetaAccion } from '../../components/chat/TarjetaAccion';
 
 /**
  * Catálogo A2UI: mapea el `tipo` que manda el backend (ver
@@ -28,4 +29,6 @@ export const catalogoA2ui: Record<string, ComponentType<any>> = {
   PropuestaAhorro,
   ConfirmarAccion,
   ActionCardSelector,
+  // Componible: el agente arma la tarjeta con piezas (components/chat/elementos.tsx).
+  TarjetaAccion,
 };

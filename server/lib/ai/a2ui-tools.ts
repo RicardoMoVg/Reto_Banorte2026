@@ -1,5 +1,12 @@
 import { tool } from 'ai';
-import { getMetasUsuario, getSaldoUsuario, getTransaccionesRecientes } from '@/lib/mcp/mcp-client';
+import {
+  getInstrumentos,
+  getMetasUsuario,
+  getPlanesPago,
+  getSaldoUsuario,
+  getTarjetasCredito,
+  getTransaccionesRecientes,
+} from '@/lib/mcp/mcp-client';
 import {
   schemaProgresoMeta,
   schemaSaldo,
@@ -7,6 +14,7 @@ import {
   schemaComparativoGastos,
   schemaPropuestaAhorro,
   schemaConfirmarAccion,
+  schemaTarjetaAccion,
 } from './a2ui-schemas';
 
 const formatoMXN = new Intl.NumberFormat('es-MX', {
@@ -42,9 +50,20 @@ function calendarioDe(actual: number, aportacion: number, objetivo: number, peri
  * exista se descarta — nunca se rellena con un número inventado.
  */
 async function datosReferenciables(userId: string): Promise<Record<string, number>> {
-  const [saldo, metas] = await Promise.all([getSaldoUsuario(userId), getMetasUsuario(userId)]);
+  const [saldo, metas, tarjetas] = await Promise.all([
+    getSaldoUsuario(userId),
+    getMetasUsuario(userId),
+    getTarjetasCredito(userId),
+  ]);
 
   const tabla: Record<string, number> = { saldo };
+
+  const tarjeta = tarjetas[0];
+  if (tarjeta) {
+    tabla['tarjeta.saldo'] = tarjeta.saldoActual;
+    tabla['tarjeta.limite'] = tarjeta.limiteCredito;
+    tabla['tarjeta.disponible'] = tarjeta.limiteCredito - tarjeta.saldoActual;
+  }
 
   metas.forEach((m, i) => {
     const faltante = Math.max(0, m.montoObjetivo - m.montoActual);
@@ -174,6 +193,132 @@ export function buildA2uiTools(userId: string) {
         return {
           tipo: 'ComparativoGastos' as const,
           props: { titulo, categorias, mensajeAgente },
+        };
+      },
+    }),
+
+    armarTarjetaAccion: tool({
+      description:
+        'Arma una tarjeta de acción a la medida, eligiendo de qué piezas se ' +
+        'compone (una cifra destacada, un resumen, una tabla, opciones a ' +
+        'elegir, una nota). Úsala cuando ninguna de las tarjetas fijas ' +
+        'encaje: reestructurar una tarjeta de crédito a distintos plazos, ' +
+        'comparar instrumentos de inversión, o cualquier caso donde el ' +
+        'usuario deba escoger entre alternativas.',
+      parameters: schemaTarjetaAccion,
+      execute: async ({
+        intencion,
+        titulo,
+        contenido,
+        textoAccion,
+        resultado,
+        etiqueta,
+        mensajeAgente,
+      }) => {
+        const tabla = await datosReferenciables(userId);
+
+        /** Expande una `fuente` a filas reales del MCP. */
+        async function filasDe(fuente: string) {
+          if (fuente === 'planes-pago') {
+            const [tarjeta] = await getTarjetasCredito(userId);
+            if (!tarjeta) return [];
+            const planes = await getPlanesPago(tarjeta.id);
+            return planes.map((p) => ({
+              id: p.id,
+              tituloOpcion: `${p.plazoMeses} meses`,
+              subtitulo: `CAT ${p.cat}%`,
+              valorDestacado: `${formatoMXN.format(p.pagoMensual)}/mes`,
+            }));
+          }
+
+          if (fuente === 'instrumentos') {
+            const instrumentos = await getInstrumentos();
+            return instrumentos.map((i) => ({
+              id: i.id,
+              tituloOpcion: i.nombre,
+              subtitulo: `Riesgo ${i.riesgo}`,
+              valorDestacado: `${i.rendimientoAnualEstimado}% anual`,
+            }));
+          }
+
+          const metas = await getMetasUsuario(userId);
+          return metas.map((m) => ({
+            id: m.id,
+            tituloOpcion: m.titulo,
+            subtitulo: `${m.porcentaje}% de avance`,
+            valorDestacado: formatoMXN.format(m.montoObjetivo - m.montoActual),
+          }));
+        }
+
+        // Cada pieza se reconstruye con datos reales. Una referencia que no
+        // existe se descarta en vez de rellenarse con un número inventado
+        // (constitution.md 4.2) -- por eso el filter(Boolean) del final.
+        const piezas = await Promise.all(
+          contenido.map(async (c) => {
+            if (c.elemento === 'destacado') {
+              const valor = c.idDato ? tabla[c.idDato] : undefined;
+              if (typeof valor !== 'number') return null;
+              return {
+                elemento: 'destacado' as const,
+                etiqueta: c.etiqueta ?? 'Monto',
+                valor: formatoMXN.format(valor),
+              };
+            }
+
+            if (c.elemento === 'resumen') {
+              const filas = (c.campos ?? [])
+                .filter((campo) => typeof tabla[campo.idDato] === 'number')
+                .map((campo) => ({
+                  etiqueta: campo.etiqueta,
+                  valor: formatoMXN.format(tabla[campo.idDato]),
+                }));
+              return filas.length > 0 ? { elemento: 'resumen' as const, filas } : null;
+            }
+
+            if (c.elemento === 'opciones') {
+              const opciones = await filasDe(c.fuente ?? 'metas');
+              return opciones.length > 0 ? { elemento: 'opciones' as const, opciones } : null;
+            }
+
+            if (c.elemento === 'tabla') {
+              const filas = await filasDe(c.fuente ?? 'metas');
+              if (filas.length === 0) return null;
+              return {
+                elemento: 'tabla' as const,
+                columnas: ['Opción', 'Detalle', 'Monto'],
+                renglones: filas.map((f) => ({
+                  celdas: [f.tituloOpcion, f.subtitulo, f.valorDestacado],
+                })),
+              };
+            }
+
+            return c.texto
+              ? { elemento: 'nota' as const, texto: c.texto, tono: c.tono ?? 'info' }
+              : null;
+          }),
+        );
+
+        const definitivas = piezas.filter((p) => p !== null);
+
+        if (definitivas.length === 0) {
+          return {
+            error:
+              'No hay datos para ninguna de las piezas pedidas, así que la tarjeta quedaría vacía.',
+          };
+        }
+
+        return {
+          tipo: 'TarjetaAccion' as const,
+          props: {
+            idAccion: `tarjeta-${Date.now()}`,
+            etiqueta,
+            intencion,
+            titulo,
+            contenido: definitivas,
+            textoAccion,
+            resultado,
+            mensajeAgente,
+          },
         };
       },
     }),

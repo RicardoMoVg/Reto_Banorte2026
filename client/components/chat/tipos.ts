@@ -71,6 +71,7 @@ export const BLOQUES_DE_ACCION = [
   'PropuestaAhorro',
   'ConfirmarAccion',
   'ActionCardSelector',
+  'TarjetaAccion',
 ] as const;
 
 export function esBloqueDeAccion(nombre: string) {

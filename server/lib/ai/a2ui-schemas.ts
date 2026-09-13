@@ -143,3 +143,81 @@ export const schemaConfirmarAccion = z.object({
     .describe('Cómo nombrar esta acción dentro de la frase "Acepto <etiqueta>." SIN cifras.'),
   mensajeAgente: z.string().describe('Contexto breve, una línea.'),
 });
+
+/**
+ * Tarjeta de acción COMPONIBLE: el modelo arma la tarjeta con piezas en vez
+ * de pedir una ya hecha (la idea de LEGO). El vocabulario de piezas es el
+ * de `client/components/chat/elementos.tsx` — si se agrega una allá, se
+ * agrega aquí, en ese orden.
+ *
+ * Por qué el arreglo es PLANO con campos opcionales y no una unión
+ * discriminada de Zod: las uniones anidadas se le atragantan al
+ * function-calling de los modelos y terminan en JSON inválido. Un objeto
+ * con `elemento` + campos opcionales produce el mismo resultado y el
+ * `execute` valida qué campos aplican a cada pieza.
+ *
+ * Las cifras NO viajan aquí. El modelo elige piezas y referencias
+ * (`idDato`, `fuente`); el código hace el lookup contra el MCP e inyecta
+ * los valores (constitution.md 4.4).
+ */
+export const schemaTarjetaAccion = z.object({
+  intencion: z
+    .enum(['alerta', 'ahorro', 'inversion', 'neutral'])
+    .describe(
+      'Qué está en juego, NO un color. "alerta": riesgo o urgencia. "ahorro": avance hacia una meta. ' +
+        '"inversion": compromiso a plazo. "neutral": trámite. Ante la duda, "neutral".',
+    ),
+  titulo: z
+    .string()
+    .describe(
+      'Encabezado de la tarjeta, SIN cifras: "Reestructura tu saldo", no ' +
+        '"Reestructura tus $18,400". Si el monto debe verse, pídelo como pieza "destacado" — ' +
+        'ahí lo inyecta el código desde el MCP en vez de que tú lo escribas.',
+    ),
+  contenido: z
+    .array(
+      z.object({
+        elemento: z
+          .enum(['destacado', 'resumen', 'tabla', 'opciones', 'nota'])
+          .describe(
+            '"destacado": una cifra grande. "resumen": pares etiqueta/valor. ' +
+              '"tabla": comparativo de varias filas. "opciones": alternativas que el usuario elige ' +
+              '(si incluyes esta, la tarjeta pedirá elegir una). "nota": una línea de contexto.',
+          ),
+        idDato: z
+          .string()
+          .optional()
+          .describe(
+            'Solo para "destacado". Referencia al dato real, NUNCA el valor. Válidos: "saldo", ' +
+              '"meta.actual", "meta.objetivo", "meta.faltante", "tarjeta.saldo", "tarjeta.limite", ' +
+              '"tarjeta.disponible", o con id: "meta:<id>.actual".',
+          ),
+        etiqueta: z.string().optional().describe('Solo para "destacado": cómo se llama esa cifra.'),
+        campos: z
+          .array(z.object({ idDato: z.string(), etiqueta: z.string() }))
+          .optional()
+          .describe('Solo para "resumen": las filas, cada una referenciando un idDato válido.'),
+        fuente: z
+          .enum(['planes-pago', 'instrumentos', 'metas'])
+          .optional()
+          .describe(
+            'Solo para "opciones" y "tabla": de dónde salen las filas. "planes-pago": plazos de ' +
+              'reestructura de la tarjeta. "instrumentos": opciones de inversión. "metas": metas de ahorro.',
+          ),
+        texto: z.string().optional().describe('Solo para "nota": la línea de texto.'),
+        tono: z.enum(['info', 'advertencia']).optional().describe('Solo para "nota".'),
+      }),
+    )
+    .min(1)
+    .max(5)
+    .describe('Las piezas, en el orden en que se pintan. Arma lo mínimo que responda la pregunta.'),
+  textoAccion: z
+    .string()
+    .optional()
+    .describe('Texto del botón, ej. "Aplicar plan", "Invertir". Por defecto "Aceptar"/"Aplicar".'),
+  resultado: z.string().describe('Qué queda configurado al aceptar, en una línea.'),
+  etiqueta: z
+    .string()
+    .describe('Cómo nombrar esta acción en la frase "Acepto <etiqueta>." SIN cifras.'),
+  mensajeAgente: z.string().describe('Contexto breve, una línea.'),
+});
