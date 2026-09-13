@@ -275,7 +275,7 @@ export default function Movimientos() {
           <Ionicons
             name={item.icono}
             size={18}
-            color={esIngreso ? colores.positivo : 'rgba(235, 0, 41, 0.85)'}
+            color={esIngreso ? colores.textoInverso : 'rgba(235, 0, 41, 0.85)'}
           />
         </View>
 
@@ -566,7 +566,7 @@ const styles = StyleSheet.create({
   },
 
   /* ── Lista de movimientos ── */
-  lista: { paddingTop: espacio.xs },
+  lista: { paddingTop: espacio.xs, paddingHorizontal: espacio.lg },
   presionado: { opacity: 0.7 },
 
   fila: {
@@ -574,9 +574,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: espacio.md,
     paddingVertical: espacio.md,
-    paddingHorizontal: espacio.lg,
+    paddingHorizontal: espacio.md,
+    borderRadius: radio.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
-  filaPresionada: { backgroundColor: 'rgba(255, 255, 255, 0.05)' },
+  filaPresionada: { backgroundColor: 'rgba(255, 255, 255, 0.25)' },
 
   iconoFila: {
     width: 40,
@@ -594,12 +598,10 @@ const styles = StyleSheet.create({
 
   montoCol: { alignItems: 'flex-end', gap: 2 },
   monto: { fontSize: 14, fontWeight: '700', color: '#EB0029' },
-  montoPositivo: { color: colores.positivo },
+  montoPositivo: { color: colores.textoInverso },
 
   separador: {
-    height: 1,
-    backgroundColor: vidrio.borde,
-    marginHorizontal: espacio.lg,
+    height: espacio.sm,
   },
 
   vacio: { alignItems: 'center', gap: espacio.md, paddingVertical: espacio.xxl },
