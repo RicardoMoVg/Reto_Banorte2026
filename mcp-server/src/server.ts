@@ -63,24 +63,25 @@ server.tool(
 
 server.tool(
   'aportar_a_meta',
-  'Suma un aporte al monto actual de una meta activa. Si con el aporte se alcanza o supera el objetivo, la marca como completada.',
+  'Suma un aporte al monto actual de una meta activa del usuario. Si con el aporte se alcanza o supera el objetivo, la marca como completada.',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño de la meta)'),
     metaId: z.string().describe('Id de la meta'),
     monto: z.number().positive().describe('Cantidad a aportar'),
   },
-  async ({ metaId, monto }) => {
+  async ({ userId, metaId, monto }) => {
     const { rows } = await pool.query(
       `update metas
        set monto_actual = monto_actual + $2,
            estatus = case when monto_actual + $2 >= monto_objetivo then 'completada' else estatus end
-       where id = $1 and estatus = 'activa'
+       where id = $1 and usuario_id = $3 and estatus = 'activa'
        returning id, titulo, monto_actual, monto_objetivo, estatus`,
-      [metaId, monto],
+      [metaId, monto, userId],
     );
 
     if (rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Meta no encontrada o no está activa.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Meta no encontrada, no pertenece al usuario, o no está activa.' }) }],
       };
     }
 
@@ -92,20 +93,21 @@ server.tool(
 
 server.tool(
   'archivar_meta',
-  'Archiva una meta (borrado lógico -- deja de aparecer en get_metas, pero no se borra su historial).',
+  'Archiva una meta del usuario (borrado lógico -- deja de aparecer en get_metas, pero no se borra su historial).',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño de la meta)'),
     metaId: z.string().describe('Id de la meta'),
   },
-  async ({ metaId }) => {
+  async ({ userId, metaId }) => {
     const { rows } = await pool.query(
-      `update metas set estatus = 'archivada' where id = $1
+      `update metas set estatus = 'archivada' where id = $1 and usuario_id = $2
        returning id, titulo, monto_actual, monto_objetivo, estatus`,
-      [metaId],
+      [metaId, userId],
     );
 
     if (rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Meta no encontrada.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Meta no encontrada o no pertenece al usuario.' }) }],
       };
     }
 
@@ -393,20 +395,21 @@ server.tool(
 
 server.tool(
   'vender_posicion',
-  'Vende una posición, total o parcialmente. Si no se especifica cantidad, o la cantidad cubre toda la posición, la marca como vendida (borrado lógico).',
+  'Vende una posición del usuario, total o parcialmente. Si no se especifica cantidad, o la cantidad cubre toda la posición, la marca como vendida (borrado lógico).',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño de la posición)'),
     posicionId: z.string().describe('Id de la posición'),
     cantidad: z.number().positive().optional().describe('Cantidad a vender. Si no se especifica, se vende toda la posición.'),
   },
-  async ({ posicionId, cantidad }) => {
+  async ({ userId, posicionId, cantidad }) => {
     const existente = await pool.query(
-      `select cantidad from posiciones_portafolio where id = $1 and activa`,
-      [posicionId],
+      `select cantidad from posiciones_portafolio where id = $1 and usuario_id = $2 and activa`,
+      [posicionId, userId],
     );
 
     if (existente.rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Posición no encontrada o ya está vendida.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Posición no encontrada, no pertenece al usuario, o ya está vendida.' }) }],
       };
     }
 
@@ -643,21 +646,22 @@ server.tool(
 
 server.tool(
   'cancelar_solicitud_credito',
-  'Cancela una solicitud de crédito que sigue pendiente (borrado lógico -- una ya aprobada/rechazada no se puede cancelar).',
+  'Cancela una solicitud de crédito del usuario que sigue pendiente (borrado lógico -- una ya aprobada/rechazada no se puede cancelar).',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño de la solicitud)'),
     solicitudId: z.string().describe('Id de la solicitud'),
   },
-  async ({ solicitudId }) => {
+  async ({ userId, solicitudId }) => {
     const { rows } = await pool.query(
       `update solicitudes_credito set estatus = 'cancelada'
-       where id = $1 and estatus = 'pendiente'
+       where id = $1 and usuario_id = $2 and estatus = 'pendiente'
        returning id, tipo, monto_solicitado, estatus, fecha`,
-      [solicitudId],
+      [solicitudId, userId],
     );
 
     if (rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Solicitud no encontrada o ya no está pendiente.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Solicitud no encontrada, no pertenece al usuario, o ya no está pendiente.' }) }],
       };
     }
 
@@ -715,20 +719,21 @@ server.tool(
 
 server.tool(
   'desactivar_contacto_pago',
-  'Desactiva un contacto de pago (borrado lógico -- deja de aparecer en get_contactos_pago, pero transferencias pasadas lo siguen referenciando).',
+  'Desactiva un contacto de pago del usuario (borrado lógico -- deja de aparecer en get_contactos_pago, pero transferencias pasadas lo siguen referenciando).',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño del contacto)'),
     contactoId: z.string().describe('Id del contacto'),
   },
-  async ({ contactoId }) => {
+  async ({ userId, contactoId }) => {
     const { rows } = await pool.query(
-      `update contactos_pago set activo = false where id = $1
+      `update contactos_pago set activo = false where id = $1 and usuario_id = $2
        returning id, nombre, clabe, activo`,
-      [contactoId],
+      [contactoId, userId],
     );
 
     if (rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Contacto no encontrado.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Contacto no encontrado o no pertenece al usuario.' }) }],
       };
     }
 
@@ -814,21 +819,22 @@ server.tool(
 
 server.tool(
   'cancelar_transferencia',
-  'Cancela una transferencia que sigue pendiente (borrado lógico -- una transferencia ya completada no se puede cancelar).',
+  'Cancela una transferencia del usuario que sigue pendiente (borrado lógico -- una transferencia ya completada no se puede cancelar).',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño de la transferencia)'),
     transferenciaId: z.string().describe('Id de la transferencia'),
   },
-  async ({ transferenciaId }) => {
+  async ({ userId, transferenciaId }) => {
     const { rows } = await pool.query(
       `update transferencias set estatus = 'cancelada'
-       where id = $1 and estatus = 'pendiente'
+       where id = $1 and usuario_id = $2 and estatus = 'pendiente'
        returning id, tipo, monto, concepto, estatus, fecha`,
-      [transferenciaId],
+      [transferenciaId, userId],
     );
 
     if (rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Transferencia no encontrada o ya no está pendiente.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Transferencia no encontrada, no pertenece al usuario, o ya no está pendiente.' }) }],
       };
     }
 
@@ -908,21 +914,22 @@ server.tool(
 
 server.tool(
   'activar_poliza',
-  'Activa una póliza que estaba cotizada.',
+  'Activa una póliza del usuario que estaba cotizada.',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño de la póliza)'),
     polizaId: z.string().describe('Id de la póliza'),
   },
-  async ({ polizaId }) => {
+  async ({ userId, polizaId }) => {
     const { rows } = await pool.query(
       `update polizas_seguro set estatus = 'activa'
-       where id = $1 and estatus = 'cotizada'
+       where id = $1 and usuario_id = $2 and estatus = 'cotizada'
        returning id, tipo, cobertura, prima_mensual, vigencia_fin, estatus`,
-      [polizaId],
+      [polizaId, userId],
     );
 
     if (rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Póliza no encontrada o no está cotizada.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Póliza no encontrada, no pertenece al usuario, o no está cotizada.' }) }],
       };
     }
 
@@ -934,21 +941,22 @@ server.tool(
 
 server.tool(
   'cancelar_poliza',
-  'Cancela una póliza cotizada o activa (borrado lógico -- una ya vencida/cancelada no se puede volver a cancelar).',
+  'Cancela una póliza del usuario, cotizada o activa (borrado lógico -- una ya vencida/cancelada no se puede volver a cancelar).',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño de la póliza)'),
     polizaId: z.string().describe('Id de la póliza'),
   },
-  async ({ polizaId }) => {
+  async ({ userId, polizaId }) => {
     const { rows } = await pool.query(
       `update polizas_seguro set estatus = 'cancelada'
-       where id = $1 and estatus in ('cotizada', 'activa')
+       where id = $1 and usuario_id = $2 and estatus in ('cotizada', 'activa')
        returning id, tipo, cobertura, prima_mensual, vigencia_fin, estatus`,
-      [polizaId],
+      [polizaId, userId],
     );
 
     if (rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Póliza no encontrada o ya no se puede cancelar.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Póliza no encontrada, no pertenece al usuario, o ya no se puede cancelar.' }) }],
       };
     }
 
@@ -962,18 +970,20 @@ server.tool(
   'crear_siniestro',
   'Reporta un siniestro/reclamo sobre una póliza activa del usuario.',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño de la póliza)'),
     polizaId: z.string().describe('Id de la póliza (debe estar activa)'),
     descripcion: z.string().describe('Descripción de lo ocurrido'),
     montoReclamado: z.number().positive().optional(),
   },
-  async ({ polizaId, descripcion, montoReclamado }) => {
-    const poliza = await pool.query(`select id from polizas_seguro where id = $1 and estatus = 'activa'`, [
-      polizaId,
-    ]);
+  async ({ userId, polizaId, descripcion, montoReclamado }) => {
+    const poliza = await pool.query(
+      `select id from polizas_seguro where id = $1 and usuario_id = $2 and estatus = 'activa'`,
+      [polizaId, userId],
+    );
 
     if (poliza.rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Póliza no encontrada o no está activa.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Póliza no encontrada, no pertenece al usuario, o no está activa.' }) }],
       };
     }
 
@@ -1081,23 +1091,24 @@ server.tool(
 
 server.tool(
   'actualizar_racha_habito',
-  'Suma (o resetea) los días de racha de un hábito activo.',
+  'Suma (o resetea) los días de racha de un hábito activo del usuario.',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño del hábito)'),
     habitoId: z.string().describe('Id del hábito'),
     dias: z.number().int().describe('Días a sumar a la racha (usa un número negativo del tamaño de la racha actual para resetear a 0)'),
   },
-  async ({ habitoId, dias }) => {
+  async ({ userId, habitoId, dias }) => {
     const { rows } = await pool.query(
       `update habitos_financieros
        set racha_dias = greatest(racha_dias + $2, 0)
-       where id = $1 and activo
+       where id = $1 and usuario_id = $3 and activo
        returning id, habito, racha_dias, activo`,
-      [habitoId, dias],
+      [habitoId, dias, userId],
     );
 
     if (rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Hábito no encontrado o no está activo.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Hábito no encontrado, no pertenece al usuario, o no está activo.' }) }],
       };
     }
 
@@ -1109,20 +1120,21 @@ server.tool(
 
 server.tool(
   'desactivar_habito',
-  'Desactiva un hábito financiero (borrado lógico -- deja de aparecer en get_habitos_financieros).',
+  'Desactiva un hábito financiero del usuario (borrado lógico -- deja de aparecer en get_habitos_financieros).',
   {
+    userId: z.string().describe('Id del usuario (debe ser dueño del hábito)'),
     habitoId: z.string().describe('Id del hábito'),
   },
-  async ({ habitoId }) => {
+  async ({ userId, habitoId }) => {
     const { rows } = await pool.query(
-      `update habitos_financieros set activo = false where id = $1
+      `update habitos_financieros set activo = false where id = $1 and usuario_id = $2
        returning id, habito, racha_dias, activo`,
-      [habitoId],
+      [habitoId, userId],
     );
 
     if (rows.length === 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Hábito no encontrado.' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Hábito no encontrado o no pertenece al usuario.' }) }],
       };
     }
 

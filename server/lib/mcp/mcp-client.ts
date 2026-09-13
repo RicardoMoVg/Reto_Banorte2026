@@ -202,7 +202,7 @@ export async function crearMeta(
   };
 }
 
-export async function aportarAMeta(metaId: string, monto: number): Promise<Meta | { error: string }> {
+export async function aportarAMeta(userId: string, metaId: string, monto: number): Promise<Meta | { error: string }> {
   if (USE_MOCK) {
     const meta = METAS_MOCK.find((m) => m.id === metaId && m.estatus === 'activa');
     if (!meta) return { error: 'Meta no encontrada o no está activa.' };
@@ -215,7 +215,7 @@ export async function aportarAMeta(metaId: string, monto: number): Promise<Meta 
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; titulo: string; monto_actual: string | number; monto_objetivo: string | number; estatus: Meta['estatus'] }
-  >('aportar_a_meta', { metaId, monto });
+  >('aportar_a_meta', { userId, metaId, monto });
 
   if ('error' in resultado) return resultado;
 
@@ -231,7 +231,7 @@ export async function aportarAMeta(metaId: string, monto: number): Promise<Meta 
   };
 }
 
-export async function archivarMeta(metaId: string): Promise<Meta | { error: string }> {
+export async function archivarMeta(userId: string, metaId: string): Promise<Meta | { error: string }> {
   if (USE_MOCK) {
     const meta = METAS_MOCK.find((m) => m.id === metaId);
     if (!meta) return { error: 'Meta no encontrada.' };
@@ -242,7 +242,7 @@ export async function archivarMeta(metaId: string): Promise<Meta | { error: stri
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; titulo: string; monto_actual: string | number; monto_objetivo: string | number; estatus: Meta['estatus'] }
-  >('archivar_meta', { metaId });
+  >('archivar_meta', { userId, metaId });
 
   if ('error' in resultado) return resultado;
 
@@ -552,6 +552,7 @@ export async function comprarPosicion(
 }
 
 export async function venderPosicion(
+  userId: string,
   posicionId: string,
   cantidad?: number,
 ): Promise<PosicionMutada | { error: string }> {
@@ -574,7 +575,7 @@ export async function venderPosicion(
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; cantidad: string | number; precio_promedio: string | number; activa: boolean }
-  >('vender_posicion', { posicionId, cantidad });
+  >('vender_posicion', { userId, posicionId, cantidad });
 
   if ('error' in resultado) return resultado;
 
@@ -806,6 +807,7 @@ export async function crearSolicitudCredito(
 }
 
 export async function cancelarSolicitudCredito(
+  userId: string,
   solicitudId: string,
 ): Promise<SolicitudCredito | { error: string }> {
   if (USE_MOCK) {
@@ -818,7 +820,7 @@ export async function cancelarSolicitudCredito(
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; tipo: string; monto_solicitado: string | number; estatus: string; fecha: string }
-  >('cancelar_solicitud_credito', { solicitudId });
+  >('cancelar_solicitud_credito', { userId, solicitudId });
 
   if ('error' in resultado) return resultado;
 
@@ -887,6 +889,7 @@ export async function crearContactoPago(
 }
 
 export async function desactivarContactoPago(
+  userId: string,
   contactoId: string,
 ): Promise<ContactoPago | { error: string }> {
   if (USE_MOCK) {
@@ -896,7 +899,7 @@ export async function desactivarContactoPago(
     return contacto;
   }
 
-  return llamarTool<{ error: string } | ContactoPago>('desactivar_contacto_pago', { contactoId });
+  return llamarTool<{ error: string } | ContactoPago>('desactivar_contacto_pago', { userId, contactoId });
 }
 
 export interface Transferencia {
@@ -997,6 +1000,7 @@ export async function crearTransferencia(
 }
 
 export async function cancelarTransferencia(
+  userId: string,
   transferenciaId: string,
 ): Promise<Transferencia | { error: string }> {
   if (USE_MOCK) {
@@ -1009,7 +1013,7 @@ export async function cancelarTransferencia(
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; tipo: string; monto: string | number; concepto: string | null; estatus: string; fecha: string }
-  >('cancelar_transferencia', { transferenciaId });
+  >('cancelar_transferencia', { userId, transferenciaId });
 
   if ('error' in resultado) return resultado;
 
@@ -1104,7 +1108,7 @@ function mapearPoliza(p: PolizaCruda): PolizaSeguro {
   return { id: p.id, tipo: p.tipo, cobertura: p.cobertura, primaMensual: Number(p.prima_mensual), vigenciaFin: p.vigencia_fin, estatus: p.estatus };
 }
 
-export async function activarPoliza(polizaId: string): Promise<PolizaSeguro | { error: string }> {
+export async function activarPoliza(userId: string, polizaId: string): Promise<PolizaSeguro | { error: string }> {
   if (USE_MOCK) {
     const poliza = POLIZAS_SEGURO_MOCK.find((p) => p.id === polizaId && p.estatus === 'cotizada');
     if (!poliza) return { error: 'Póliza no encontrada o no está cotizada.' };
@@ -1112,11 +1116,11 @@ export async function activarPoliza(polizaId: string): Promise<PolizaSeguro | { 
     return poliza;
   }
 
-  const resultado = await llamarTool<{ error: string } | PolizaCruda>('activar_poliza', { polizaId });
+  const resultado = await llamarTool<{ error: string } | PolizaCruda>('activar_poliza', { userId, polizaId });
   return 'error' in resultado ? resultado : mapearPoliza(resultado);
 }
 
-export async function cancelarPoliza(polizaId: string): Promise<PolizaSeguro | { error: string }> {
+export async function cancelarPoliza(userId: string, polizaId: string): Promise<PolizaSeguro | { error: string }> {
   if (USE_MOCK) {
     const poliza = POLIZAS_SEGURO_MOCK.find((p) => p.id === polizaId && (p.estatus === 'cotizada' || p.estatus === 'activa'));
     if (!poliza) return { error: 'Póliza no encontrada o ya no se puede cancelar.' };
@@ -1124,7 +1128,7 @@ export async function cancelarPoliza(polizaId: string): Promise<PolizaSeguro | {
     return poliza;
   }
 
-  const resultado = await llamarTool<{ error: string } | PolizaCruda>('cancelar_poliza', { polizaId });
+  const resultado = await llamarTool<{ error: string } | PolizaCruda>('cancelar_poliza', { userId, polizaId });
   return 'error' in resultado ? resultado : mapearPoliza(resultado);
 }
 
@@ -1166,6 +1170,7 @@ export async function getSiniestrosUsuario(userId: string): Promise<Siniestro[]>
 }
 
 export async function crearSiniestro(
+  userId: string,
   polizaId: string,
   descripcion: string,
   montoReclamado?: number,
@@ -1189,7 +1194,7 @@ export async function crearSiniestro(
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; descripcion: string; monto_reclamado: string | number | null; estatus: string; fecha: string }
-  >('crear_siniestro', { polizaId, descripcion, montoReclamado });
+  >('crear_siniestro', { userId, polizaId, descripcion, montoReclamado });
 
   if ('error' in resultado) return resultado;
 
@@ -1283,6 +1288,7 @@ export async function crearHabitoFinanciero(userId: string, habito: string): Pro
 }
 
 export async function actualizarRachaHabito(
+  userId: string,
   habitoId: string,
   dias: number,
 ): Promise<HabitoFinanciero | { error: string }> {
@@ -1296,14 +1302,14 @@ export async function actualizarRachaHabito(
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; habito: string; racha_dias: number; activo: boolean }
-  >('actualizar_racha_habito', { habitoId, dias });
+  >('actualizar_racha_habito', { userId, habitoId, dias });
 
   if ('error' in resultado) return resultado;
 
   return { id: resultado.id, habito: resultado.habito, rachaDias: resultado.racha_dias, activo: resultado.activo };
 }
 
-export async function desactivarHabito(habitoId: string): Promise<HabitoFinanciero | { error: string }> {
+export async function desactivarHabito(userId: string, habitoId: string): Promise<HabitoFinanciero | { error: string }> {
   if (USE_MOCK) {
     const habito = HABITOS_MOCK.find((h) => h.id === habitoId);
     if (!habito) return { error: 'Hábito no encontrado.' };
@@ -1314,7 +1320,7 @@ export async function desactivarHabito(habitoId: string): Promise<HabitoFinancie
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; habito: string; racha_dias: number; activo: boolean }
-  >('desactivar_habito', { habitoId });
+  >('desactivar_habito', { userId, habitoId });
 
   if ('error' in resultado) return resultado;
 
