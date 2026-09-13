@@ -202,7 +202,7 @@ export async function crearMeta(
   };
 }
 
-export async function aportarAMeta(metaId: string, monto: number): Promise<Meta | { error: string }> {
+export async function aportarAMeta(userId: string, metaId: string, monto: number): Promise<Meta | { error: string }> {
   if (USE_MOCK) {
     const meta = METAS_MOCK.find((m) => m.id === metaId && m.estatus === 'activa');
     if (!meta) return { error: 'Meta no encontrada o no está activa.' };
@@ -215,7 +215,7 @@ export async function aportarAMeta(metaId: string, monto: number): Promise<Meta 
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; titulo: string; monto_actual: string | number; monto_objetivo: string | number; estatus: Meta['estatus'] }
-  >('aportar_a_meta', { metaId, monto });
+  >('aportar_a_meta', { userId, metaId, monto });
 
   if ('error' in resultado) return resultado;
 
@@ -231,7 +231,7 @@ export async function aportarAMeta(metaId: string, monto: number): Promise<Meta 
   };
 }
 
-export async function archivarMeta(metaId: string): Promise<Meta | { error: string }> {
+export async function archivarMeta(userId: string, metaId: string): Promise<Meta | { error: string }> {
   if (USE_MOCK) {
     const meta = METAS_MOCK.find((m) => m.id === metaId);
     if (!meta) return { error: 'Meta no encontrada.' };
@@ -242,7 +242,7 @@ export async function archivarMeta(metaId: string): Promise<Meta | { error: stri
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; titulo: string; monto_actual: string | number; monto_objetivo: string | number; estatus: Meta['estatus'] }
-  >('archivar_meta', { metaId });
+  >('archivar_meta', { userId, metaId });
 
   if ('error' in resultado) return resultado;
 
@@ -331,9 +331,87 @@ export async function getCuentasUsuario(userId: string): Promise<Cuenta[]> {
   return rows.map((c) => ({ id: c.id, tipo: c.tipo, alias: c.alias, saldo: Number(c.saldo) }));
 }
 
+export async function crearTransaccion(
+  userId: string,
+  cuentaId: string,
+  descripcion: string,
+  monto: number,
+  categoria?: string,
+): Promise<Transaccion | { error: string }> {
+  if (USE_MOCK) {
+    const cuenta = CUENTAS_MOCK.find((c) => c.id === cuentaId);
+    if (!cuenta) return { error: 'Cuenta no encontrada o no pertenece al usuario.' };
+
+    const transaccion: Transaccion = {
+      id: `tx-mock-${TRANSACCIONES_MOCK.length + 1}`,
+      descripcion,
+      monto,
+      fecha: new Date().toISOString(),
+      categoria: categoria ?? '',
+    };
+    TRANSACCIONES_MOCK.push(transaccion);
+    cuenta.saldo += monto;
+    return transaccion;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; descripcion: string; monto: string | number; categoria: string; fecha: string }
+  >('crear_transaccion', { userId, cuentaId, descripcion, monto, categoria });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    descripcion: resultado.descripcion,
+    monto: Number(resultado.monto),
+    categoria: resultado.categoria,
+    fecha: resultado.fecha,
+  };
+}
+
 // ============================================================
 // Inversiones
 // ============================================================
+
+export interface Instrumento {
+  id: string;
+  nombre: string;
+  tipo: string;
+  riesgo: string;
+  rendimientoAnualEstimado: number;
+}
+
+const INSTRUMENTOS_MOCK: Instrumento[] = [
+  { id: 'inst-1', nombre: 'Fondo Banorte Renta Variable', tipo: 'fondo', riesgo: 'alto', rendimientoAnualEstimado: 11.5 },
+  { id: 'inst-2', nombre: 'CETES 28 días', tipo: 'cetes', riesgo: 'bajo', rendimientoAnualEstimado: 10.8 },
+  { id: 'inst-3', nombre: 'ETF S&P 500', tipo: 'etf', riesgo: 'medio', rendimientoAnualEstimado: 9.2 },
+];
+
+export async function getInstrumentos(
+  opciones: { tipo?: string; riesgo?: string } = {},
+): Promise<Instrumento[]> {
+  const { tipo, riesgo } = opciones;
+
+  if (USE_MOCK) {
+    let resultado = INSTRUMENTOS_MOCK;
+    if (tipo) resultado = resultado.filter((i) => i.tipo === tipo);
+    if (riesgo) resultado = resultado.filter((i) => i.riesgo === riesgo);
+    return resultado;
+  }
+
+  const rows = await llamarTool<
+    Array<{ id: string; nombre: string; tipo: string; riesgo: string; rendimiento_anual_estimado: string | number }>
+  >('get_instrumentos', { tipo, riesgo });
+
+  return rows.map((i) => ({
+    id: i.id,
+    nombre: i.nombre,
+    tipo: i.tipo,
+    riesgo: i.riesgo,
+    rendimientoAnualEstimado: Number(i.rendimiento_anual_estimado),
+  }));
+}
 
 export interface PerfilInversion {
   toleranciaRiesgo: string;
@@ -354,6 +432,25 @@ export async function getPerfilInversion(userId: string): Promise<PerfilInversio
   return { toleranciaRiesgo: row.tolerancia_riesgo, horizonteAnios: row.horizonte_anios };
 }
 
+export async function actualizarPerfilInversion(
+  userId: string,
+  toleranciaRiesgo: string,
+  horizonteAnios: number,
+): Promise<PerfilInversion> {
+  if (USE_MOCK) {
+    PERFIL_INVERSION_MOCK.toleranciaRiesgo = toleranciaRiesgo;
+    PERFIL_INVERSION_MOCK.horizonteAnios = horizonteAnios;
+    return PERFIL_INVERSION_MOCK;
+  }
+
+  const row = await llamarTool<{ tolerancia_riesgo: string; horizonte_anios: number }>(
+    'actualizar_perfil_inversion',
+    { userId, toleranciaRiesgo, horizonteAnios },
+  );
+
+  return { toleranciaRiesgo: row.tolerancia_riesgo, horizonteAnios: row.horizonte_anios };
+}
+
 export interface PosicionPortafolio {
   id: string;
   nombre: string;
@@ -363,15 +460,21 @@ export interface PosicionPortafolio {
   cantidad: number;
   precioPromedio: number;
   valorInvertido: number;
+  activa: boolean;
 }
 
 const PORTAFOLIO_MOCK: PosicionPortafolio[] = [
-  { id: 'pos-1', nombre: 'Fondo Banorte Renta Variable', tipo: 'fondo', riesgo: 'alto', rendimientoAnualEstimado: 11.5, cantidad: 100, precioPromedio: 25.5, valorInvertido: 2550 },
-  { id: 'pos-2', nombre: 'CETES 28 días', tipo: 'cetes', riesgo: 'bajo', rendimientoAnualEstimado: 10.8, cantidad: 500, precioPromedio: 10, valorInvertido: 5000 },
+  { id: 'pos-1', nombre: 'Fondo Banorte Renta Variable', tipo: 'fondo', riesgo: 'alto', rendimientoAnualEstimado: 11.5, cantidad: 100, precioPromedio: 25.5, valorInvertido: 2550, activa: true },
+  { id: 'pos-2', nombre: 'CETES 28 días', tipo: 'cetes', riesgo: 'bajo', rendimientoAnualEstimado: 10.8, cantidad: 500, precioPromedio: 10, valorInvertido: 5000, activa: true },
 ];
 
-export async function getPortafolioUsuario(userId: string): Promise<PosicionPortafolio[]> {
-  if (USE_MOCK) return PORTAFOLIO_MOCK;
+export async function getPortafolioUsuario(
+  userId: string,
+  incluirVendidas = false,
+): Promise<PosicionPortafolio[]> {
+  if (USE_MOCK) {
+    return incluirVendidas ? PORTAFOLIO_MOCK : PORTAFOLIO_MOCK.filter((p) => p.activa);
+  }
 
   const rows = await llamarTool<
     Array<{
@@ -383,8 +486,9 @@ export async function getPortafolioUsuario(userId: string): Promise<PosicionPort
       cantidad: string | number;
       precio_promedio: string | number;
       valor_invertido: string | number;
+      activa: boolean;
     }>
-  >('get_portafolio', { userId });
+  >('get_portafolio', { userId, incluirVendidas });
 
   return rows.map((p) => ({
     id: p.id,
@@ -395,12 +499,203 @@ export async function getPortafolioUsuario(userId: string): Promise<PosicionPort
     cantidad: Number(p.cantidad),
     precioPromedio: Number(p.precio_promedio),
     valorInvertido: Number(p.valor_invertido),
+    activa: p.activa,
   }));
+}
+
+export interface PosicionMutada {
+  id: string;
+  cantidad: number;
+  precioPromedio: number;
+  activa: boolean;
+}
+
+export async function comprarPosicion(
+  userId: string,
+  instrumentoId: string,
+  cantidad: number,
+  precioCompra: number,
+): Promise<PosicionMutada> {
+  if (USE_MOCK) {
+    const instrumento = INSTRUMENTOS_MOCK.find((i) => i.id === instrumentoId);
+    const existente = PORTAFOLIO_MOCK.find((p) => p.id.startsWith('pos-') && p.activa && p.nombre === instrumento?.nombre);
+
+    if (existente) {
+      const nueva = existente.cantidad + cantidad;
+      existente.precioPromedio = (existente.cantidad * existente.precioPromedio + cantidad * precioCompra) / nueva;
+      existente.cantidad = nueva;
+      existente.valorInvertido = existente.cantidad * existente.precioPromedio;
+      return { id: existente.id, cantidad: existente.cantidad, precioPromedio: existente.precioPromedio, activa: true };
+    }
+
+    const nueva: PosicionPortafolio = {
+      id: `pos-mock-${PORTAFOLIO_MOCK.length + 1}`,
+      nombre: instrumento?.nombre ?? instrumentoId,
+      tipo: instrumento?.tipo ?? '',
+      riesgo: instrumento?.riesgo ?? '',
+      rendimientoAnualEstimado: instrumento?.rendimientoAnualEstimado ?? 0,
+      cantidad,
+      precioPromedio: precioCompra,
+      valorInvertido: cantidad * precioCompra,
+      activa: true,
+    };
+    PORTAFOLIO_MOCK.push(nueva);
+    return { id: nueva.id, cantidad: nueva.cantidad, precioPromedio: nueva.precioPromedio, activa: true };
+  }
+
+  const p = await llamarTool<{ id: string; cantidad: string | number; precio_promedio: string | number; activa: boolean }>(
+    'comprar_posicion',
+    { userId, instrumentoId, cantidad, precioCompra },
+  );
+
+  return { id: p.id, cantidad: Number(p.cantidad), precioPromedio: Number(p.precio_promedio), activa: p.activa };
+}
+
+export async function venderPosicion(
+  userId: string,
+  posicionId: string,
+  cantidad?: number,
+): Promise<PosicionMutada | { error: string }> {
+  if (USE_MOCK) {
+    const pos = PORTAFOLIO_MOCK.find((p) => p.id === posicionId && p.activa);
+    if (!pos) return { error: 'Posición no encontrada o ya está vendida.' };
+
+    const aVender = cantidad ?? pos.cantidad;
+    if (aVender > pos.cantidad) return { error: 'No se puede vender más de lo que se tiene.' };
+
+    if (aVender === pos.cantidad) {
+      pos.activa = false;
+    } else {
+      pos.cantidad -= aVender;
+      pos.valorInvertido = pos.cantidad * pos.precioPromedio;
+    }
+    return { id: pos.id, cantidad: pos.cantidad, precioPromedio: pos.precioPromedio, activa: pos.activa };
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; cantidad: string | number; precio_promedio: string | number; activa: boolean }
+  >('vender_posicion', { userId, posicionId, cantidad });
+
+  if ('error' in resultado) return resultado;
+
+  return { id: resultado.id, cantidad: Number(resultado.cantidad), precioPromedio: Number(resultado.precio_promedio), activa: resultado.activa };
+}
+
+export interface SimulacionInversion {
+  instrumento: string;
+  montoInicial: number;
+  anios: number;
+  rendimientoAnualEstimado: number;
+  valorFinalEstimado: number;
+  gananciaEstimada: number;
+}
+
+export async function simularInversion(
+  instrumentoId: string,
+  monto: number,
+  anios: number,
+): Promise<SimulacionInversion | { error: string }> {
+  if (USE_MOCK) {
+    const instrumento = INSTRUMENTOS_MOCK.find((i) => i.id === instrumentoId);
+    if (!instrumento) return { error: 'Instrumento no encontrado.' };
+
+    const valorFinal = monto * Math.pow(1 + instrumento.rendimientoAnualEstimado / 100, anios);
+    return {
+      instrumento: instrumento.nombre,
+      montoInicial: monto,
+      anios,
+      rendimientoAnualEstimado: instrumento.rendimientoAnualEstimado,
+      valorFinalEstimado: Math.round(valorFinal * 100) / 100,
+      gananciaEstimada: Math.round((valorFinal - monto) * 100) / 100,
+    };
+  }
+
+  return llamarTool<SimulacionInversion | { error: string }>('simular_inversion', { instrumentoId, monto, anios });
 }
 
 // ============================================================
 // Crédito
 // ============================================================
+
+export interface ProductoCredito {
+  id: string;
+  tipo: string;
+  nombre: string;
+  tasaReferencia: number;
+  montoMaximo: number;
+  plazoMaximoMeses: number;
+  descripcion: string | null;
+}
+
+const PRODUCTOS_CREDITO_MOCK: ProductoCredito[] = [
+  { id: 'prod-personal', tipo: 'personal', nombre: 'Crédito Personal Banorte', tasaReferencia: 32.4, montoMaximo: 300000, plazoMaximoMeses: 48, descripcion: 'Sin garantía, para cualquier fin' },
+  { id: 'prod-hipotecario', tipo: 'hipotecario', nombre: 'Crédito Hipotecario Banorte', tasaReferencia: 11.8, montoMaximo: 5000000, plazoMaximoMeses: 240, descripcion: 'Para compra de vivienda' },
+  { id: 'prod-automotriz', tipo: 'automotriz', nombre: 'Crédito Automotriz Banorte', tasaReferencia: 14.5, montoMaximo: 800000, plazoMaximoMeses: 60, descripcion: 'Para compra de auto nuevo o seminuevo' },
+  { id: 'prod-tarjeta', tipo: 'tarjeta', nombre: 'Tarjeta de Crédito Banorte', tasaReferencia: 32.4, montoMaximo: 200000, plazoMaximoMeses: 1, descripcion: 'Línea revolvente, sin plazo fijo' },
+];
+
+export async function getProductosCredito(tipo?: string): Promise<ProductoCredito[]> {
+  if (USE_MOCK) {
+    return tipo ? PRODUCTOS_CREDITO_MOCK.filter((p) => p.tipo === tipo) : PRODUCTOS_CREDITO_MOCK;
+  }
+
+  const rows = await llamarTool<
+    Array<{
+      id: string;
+      tipo: string;
+      nombre: string;
+      tasa_referencia: string | number;
+      monto_maximo: string | number;
+      plazo_maximo_meses: number;
+      descripcion: string | null;
+    }>
+  >('get_productos_credito', { tipo });
+
+  return rows.map((p) => ({
+    id: p.id,
+    tipo: p.tipo,
+    nombre: p.nombre,
+    tasaReferencia: Number(p.tasa_referencia),
+    montoMaximo: Number(p.monto_maximo),
+    plazoMaximoMeses: p.plazo_maximo_meses,
+    descripcion: p.descripcion,
+  }));
+}
+
+export interface SimulacionPlanPago {
+  monto: number;
+  plazoMeses: number;
+  tasaAnual: number;
+  pagoMensual: number;
+  totalPagado: number;
+  totalIntereses: number;
+}
+
+export async function simularPlanPago(
+  monto: number,
+  plazoMeses: number,
+  tasaAnual?: number,
+): Promise<SimulacionPlanPago> {
+  if (USE_MOCK) {
+    const tasa = tasaAnual ?? PRODUCTOS_CREDITO_MOCK.find((p) => p.tipo === 'personal')?.tasaReferencia ?? 32.4;
+    const tasaMensual = tasa / 100 / 12;
+    const pagoMensual =
+      tasaMensual === 0 ? monto / plazoMeses : (monto * tasaMensual) / (1 - Math.pow(1 + tasaMensual, -plazoMeses));
+    const totalPagado = pagoMensual * plazoMeses;
+
+    return {
+      monto,
+      plazoMeses,
+      tasaAnual: tasa,
+      pagoMensual: Math.round(pagoMensual * 100) / 100,
+      totalPagado: Math.round(totalPagado * 100) / 100,
+      totalIntereses: Math.round((totalPagado - monto) * 100) / 100,
+    };
+  }
+
+  return llamarTool<SimulacionPlanPago>('simular_plan_pago', { monto, plazoMeses, tasaAnual });
+}
 
 export interface TarjetaCredito {
   id: string;
@@ -486,6 +781,58 @@ export async function getSolicitudesCredito(userId: string): Promise<SolicitudCr
   }));
 }
 
+export async function crearSolicitudCredito(
+  userId: string,
+  tipo: 'personal' | 'hipotecario' | 'automotriz' | 'tarjeta',
+  montoSolicitado: number,
+): Promise<SolicitudCredito> {
+  if (USE_MOCK) {
+    const solicitud: SolicitudCredito = {
+      id: `sol-mock-${SOLICITUDES_CREDITO_MOCK.length + 1}`,
+      tipo,
+      montoSolicitado,
+      estatus: 'pendiente',
+      fecha: new Date().toISOString(),
+    };
+    SOLICITUDES_CREDITO_MOCK.push(solicitud);
+    return solicitud;
+  }
+
+  const s = await llamarTool<{ id: string; tipo: string; monto_solicitado: string | number; estatus: string; fecha: string }>(
+    'crear_solicitud_credito',
+    { userId, tipo, montoSolicitado },
+  );
+
+  return { id: s.id, tipo: s.tipo, montoSolicitado: Number(s.monto_solicitado), estatus: s.estatus, fecha: s.fecha };
+}
+
+export async function cancelarSolicitudCredito(
+  userId: string,
+  solicitudId: string,
+): Promise<SolicitudCredito | { error: string }> {
+  if (USE_MOCK) {
+    const solicitud = SOLICITUDES_CREDITO_MOCK.find((s) => s.id === solicitudId && s.estatus === 'pendiente');
+    if (!solicitud) return { error: 'Solicitud no encontrada o ya no está pendiente.' };
+    solicitud.estatus = 'cancelada';
+    return solicitud;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; tipo: string; monto_solicitado: string | number; estatus: string; fecha: string }
+  >('cancelar_solicitud_credito', { userId, solicitudId });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    tipo: resultado.tipo,
+    montoSolicitado: Number(resultado.monto_solicitado),
+    estatus: resultado.estatus,
+    fecha: resultado.fecha,
+  };
+}
+
 // ============================================================
 // Pagos
 // ============================================================
@@ -501,17 +848,24 @@ const CONTACTOS_PAGO_MOCK: ContactoPago[] = [
   { id: 'contacto-1', nombre: 'María López', clabe: '012180012345678901', activo: true },
 ];
 
+export interface FiltroContactosPago {
+  nombre?: string;
+  incluirInactivos?: boolean;
+}
+
 export async function getContactosPago(
   userId: string,
-  incluirInactivos = false,
+  { nombre, incluirInactivos = false }: FiltroContactosPago = {},
 ): Promise<ContactoPago[]> {
   if (USE_MOCK) {
-    return incluirInactivos ? CONTACTOS_PAGO_MOCK : CONTACTOS_PAGO_MOCK.filter((c) => c.activo);
+    let resultado = incluirInactivos ? CONTACTOS_PAGO_MOCK : CONTACTOS_PAGO_MOCK.filter((c) => c.activo);
+    if (nombre) resultado = resultado.filter((c) => c.nombre.toLowerCase().includes(nombre.toLowerCase()));
+    return resultado;
   }
 
   const rows = await llamarTool<Array<{ id: string; nombre: string; clabe: string | null; activo: boolean }>>(
     'get_contactos_pago',
-    { userId, incluirInactivos },
+    { userId, nombre, incluirInactivos },
   );
 
   return rows.map((c) => ({ id: c.id, nombre: c.nombre, clabe: c.clabe, activo: c.activo }));
@@ -542,6 +896,7 @@ export async function crearContactoPago(
 }
 
 export async function desactivarContactoPago(
+  userId: string,
   contactoId: string,
 ): Promise<ContactoPago | { error: string }> {
   if (USE_MOCK) {
@@ -551,7 +906,7 @@ export async function desactivarContactoPago(
     return contacto;
   }
 
-  return llamarTool<{ error: string } | ContactoPago>('desactivar_contacto_pago', { contactoId });
+  return llamarTool<{ error: string } | ContactoPago>('desactivar_contacto_pago', { userId, contactoId });
 }
 
 export interface Transferencia {
@@ -652,6 +1007,7 @@ export async function crearTransferencia(
 }
 
 export async function cancelarTransferencia(
+  userId: string,
   transferenciaId: string,
 ): Promise<Transferencia | { error: string }> {
   if (USE_MOCK) {
@@ -664,7 +1020,7 @@ export async function cancelarTransferencia(
   const resultado = await llamarTool<
     | { error: string }
     | { id: string; tipo: string; monto: string | number; concepto: string | null; estatus: string; fecha: string }
-  >('cancelar_transferencia', { transferenciaId });
+  >('cancelar_transferencia', { userId, transferenciaId });
 
   if ('error' in resultado) return resultado;
 
@@ -714,6 +1070,75 @@ export async function getPolizasSeguro(userId: string): Promise<PolizaSeguro[]> 
   }));
 }
 
+export async function cotizarPoliza(
+  userId: string,
+  tipo: 'auto' | 'vida' | 'gmm' | 'hogar',
+  cobertura: string,
+  primaMensual: number,
+  vigenciaFin: string,
+): Promise<PolizaSeguro> {
+  if (USE_MOCK) {
+    const poliza: PolizaSeguro = {
+      id: `poliza-mock-${POLIZAS_SEGURO_MOCK.length + 1}`,
+      tipo,
+      cobertura,
+      primaMensual,
+      vigenciaFin,
+      estatus: 'cotizada',
+    };
+    POLIZAS_SEGURO_MOCK.push(poliza);
+    return poliza;
+  }
+
+  const p = await llamarTool<{
+    id: string;
+    tipo: string;
+    cobertura: string;
+    prima_mensual: string | number;
+    vigencia_fin: string;
+    estatus: string;
+  }>('cotizar_poliza', { userId, tipo, cobertura, primaMensual, vigenciaFin });
+
+  return { id: p.id, tipo: p.tipo, cobertura: p.cobertura, primaMensual: Number(p.prima_mensual), vigenciaFin: p.vigencia_fin, estatus: p.estatus };
+}
+
+type PolizaCruda = {
+  id: string;
+  tipo: string;
+  cobertura: string;
+  prima_mensual: string | number;
+  vigencia_fin: string;
+  estatus: string;
+};
+
+function mapearPoliza(p: PolizaCruda): PolizaSeguro {
+  return { id: p.id, tipo: p.tipo, cobertura: p.cobertura, primaMensual: Number(p.prima_mensual), vigenciaFin: p.vigencia_fin, estatus: p.estatus };
+}
+
+export async function activarPoliza(userId: string, polizaId: string): Promise<PolizaSeguro | { error: string }> {
+  if (USE_MOCK) {
+    const poliza = POLIZAS_SEGURO_MOCK.find((p) => p.id === polizaId && p.estatus === 'cotizada');
+    if (!poliza) return { error: 'Póliza no encontrada o no está cotizada.' };
+    poliza.estatus = 'activa';
+    return poliza;
+  }
+
+  const resultado = await llamarTool<{ error: string } | PolizaCruda>('activar_poliza', { userId, polizaId });
+  return 'error' in resultado ? resultado : mapearPoliza(resultado);
+}
+
+export async function cancelarPoliza(userId: string, polizaId: string): Promise<PolizaSeguro | { error: string }> {
+  if (USE_MOCK) {
+    const poliza = POLIZAS_SEGURO_MOCK.find((p) => p.id === polizaId && (p.estatus === 'cotizada' || p.estatus === 'activa'));
+    if (!poliza) return { error: 'Póliza no encontrada o ya no se puede cancelar.' };
+    poliza.estatus = 'cancelada';
+    return poliza;
+  }
+
+  const resultado = await llamarTool<{ error: string } | PolizaCruda>('cancelar_poliza', { userId, polizaId });
+  return 'error' in resultado ? resultado : mapearPoliza(resultado);
+}
+
 export interface Siniestro {
   id: string;
   descripcion: string;
@@ -751,6 +1176,44 @@ export async function getSiniestrosUsuario(userId: string): Promise<Siniestro[]>
   }));
 }
 
+export async function crearSiniestro(
+  userId: string,
+  polizaId: string,
+  descripcion: string,
+  montoReclamado?: number,
+): Promise<Omit<Siniestro, 'tipoPoliza'> | { error: string }> {
+  if (USE_MOCK) {
+    const poliza = POLIZAS_SEGURO_MOCK.find((p) => p.id === polizaId && p.estatus === 'activa');
+    if (!poliza) return { error: 'Póliza no encontrada o no está activa.' };
+
+    const siniestro: Siniestro = {
+      id: `siniestro-mock-${SINIESTROS_MOCK.length + 1}`,
+      descripcion,
+      montoReclamado: montoReclamado ?? null,
+      estatus: 'en_revision',
+      fecha: new Date().toISOString(),
+      tipoPoliza: poliza.tipo,
+    };
+    SINIESTROS_MOCK.push(siniestro);
+    return siniestro;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; descripcion: string; monto_reclamado: string | number | null; estatus: string; fecha: string }
+  >('crear_siniestro', { userId, polizaId, descripcion, montoReclamado });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    descripcion: resultado.descripcion,
+    montoReclamado: resultado.monto_reclamado == null ? null : Number(resultado.monto_reclamado),
+    estatus: resultado.estatus,
+    fecha: resultado.fecha,
+  };
+}
+
 // ============================================================
 // Educación financiera
 // ============================================================
@@ -770,24 +1233,103 @@ export async function getDiagnosticoFinanciero(
   return llamarTool<DiagnosticoFinanciero | null>('get_diagnostico_financiero', { userId });
 }
 
+export async function crearDiagnosticoFinanciero(
+  userId: string,
+  puntaje: number,
+): Promise<DiagnosticoFinanciero> {
+  if (USE_MOCK) {
+    DIAGNOSTICO_MOCK.puntaje = puntaje;
+    DIAGNOSTICO_MOCK.fecha = new Date().toISOString();
+    return DIAGNOSTICO_MOCK;
+  }
+
+  return llamarTool<DiagnosticoFinanciero>('crear_diagnostico_financiero', { userId, puntaje });
+}
+
 export interface HabitoFinanciero {
   id: string;
   habito: string;
   rachaDias: number;
+  activo: boolean;
 }
 
 const HABITOS_MOCK: HabitoFinanciero[] = [
-  { id: 'habito-1', habito: 'Ahorro automático semanal', rachaDias: 6 },
-  { id: 'habito-2', habito: 'Revisar gastos cada domingo', rachaDias: 3 },
+  { id: 'habito-1', habito: 'Ahorro automático semanal', rachaDias: 6, activo: true },
+  { id: 'habito-2', habito: 'Revisar gastos cada domingo', rachaDias: 3, activo: true },
 ];
 
-export async function getHabitosFinancieros(userId: string): Promise<HabitoFinanciero[]> {
-  if (USE_MOCK) return HABITOS_MOCK;
+export async function getHabitosFinancieros(
+  userId: string,
+  incluirInactivos = false,
+): Promise<HabitoFinanciero[]> {
+  if (USE_MOCK) {
+    return incluirInactivos ? HABITOS_MOCK : HABITOS_MOCK.filter((h) => h.activo);
+  }
 
-  const rows = await llamarTool<Array<{ id: string; habito: string; racha_dias: number }>>(
+  const rows = await llamarTool<Array<{ id: string; habito: string; racha_dias: number; activo: boolean }>>(
     'get_habitos_financieros',
-    { userId },
+    { userId, incluirInactivos },
   );
 
-  return rows.map((h) => ({ id: h.id, habito: h.habito, rachaDias: h.racha_dias }));
+  return rows.map((h) => ({ id: h.id, habito: h.habito, rachaDias: h.racha_dias, activo: h.activo }));
+}
+
+export async function crearHabitoFinanciero(userId: string, habito: string): Promise<HabitoFinanciero> {
+  if (USE_MOCK) {
+    const nuevo: HabitoFinanciero = {
+      id: `habito-mock-${HABITOS_MOCK.length + 1}`,
+      habito,
+      rachaDias: 0,
+      activo: true,
+    };
+    HABITOS_MOCK.push(nuevo);
+    return nuevo;
+  }
+
+  const h = await llamarTool<{ id: string; habito: string; racha_dias: number; activo: boolean }>(
+    'crear_habito_financiero',
+    { userId, habito },
+  );
+
+  return { id: h.id, habito: h.habito, rachaDias: h.racha_dias, activo: h.activo };
+}
+
+export async function actualizarRachaHabito(
+  userId: string,
+  habitoId: string,
+  dias: number,
+): Promise<HabitoFinanciero | { error: string }> {
+  if (USE_MOCK) {
+    const habito = HABITOS_MOCK.find((h) => h.id === habitoId && h.activo);
+    if (!habito) return { error: 'Hábito no encontrado o no está activo.' };
+    habito.rachaDias = Math.max(habito.rachaDias + dias, 0);
+    return habito;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; habito: string; racha_dias: number; activo: boolean }
+  >('actualizar_racha_habito', { userId, habitoId, dias });
+
+  if ('error' in resultado) return resultado;
+
+  return { id: resultado.id, habito: resultado.habito, rachaDias: resultado.racha_dias, activo: resultado.activo };
+}
+
+export async function desactivarHabito(userId: string, habitoId: string): Promise<HabitoFinanciero | { error: string }> {
+  if (USE_MOCK) {
+    const habito = HABITOS_MOCK.find((h) => h.id === habitoId);
+    if (!habito) return { error: 'Hábito no encontrado.' };
+    habito.activo = false;
+    return habito;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; habito: string; racha_dias: number; activo: boolean }
+  >('desactivar_habito', { userId, habitoId });
+
+  if ('error' in resultado) return resultado;
+
+  return { id: resultado.id, habito: resultado.habito, rachaDias: resultado.racha_dias, activo: resultado.activo };
 }

@@ -116,12 +116,31 @@ create table if not exists posiciones_portafolio (
   usuario_id text not null references usuarios(id),
   instrumento_id text not null references instrumentos(id),
   cantidad numeric not null check (cantidad > 0),
-  precio_promedio numeric not null check (precio_promedio > 0)
+  precio_promedio numeric not null check (precio_promedio > 0),
+  activa boolean not null default true
 );
+
+-- migración idempotente: `activa` es el borrado lógico al vender por
+-- completo -- `cantidad`/`precio_promedio` se quedan como quedaron (no se
+-- ponen en 0), es el registro de lo que se tenía antes de vender.
+alter table posiciones_portafolio add column if not exists activa boolean not null default true;
 
 -- ============================================================
 -- 3. Crédito — precalificación, amortización, refinanciamiento
 -- ============================================================
+
+-- Catálogo de productos de crédito ofrecidos por el banco (no lo que ya
+-- tiene el usuario) -- equivalente a `instrumentos` en inversiones, para
+-- poder ver qué hay disponible antes de solicitar.
+create table if not exists productos_credito (
+  id text primary key,
+  tipo text not null check (tipo in ('personal', 'hipotecario', 'automotriz', 'tarjeta')),
+  nombre text not null,
+  tasa_referencia numeric not null, -- % anual indicativo
+  monto_maximo numeric not null check (monto_maximo > 0),
+  plazo_maximo_meses integer not null check (plazo_maximo_meses > 0),
+  descripcion text
+);
 
 create table if not exists tarjetas_credito (
   id text primary key,
@@ -137,9 +156,14 @@ create table if not exists solicitudes_credito (
   usuario_id text not null references usuarios(id),
   tipo text not null check (tipo in ('personal', 'hipotecario', 'automotriz', 'tarjeta')),
   monto_solicitado numeric not null check (monto_solicitado > 0),
-  estatus text not null default 'pendiente' check (estatus in ('pendiente', 'aprobado', 'rechazado')),
+  estatus text not null default 'pendiente' check (estatus in ('pendiente', 'aprobado', 'rechazado', 'cancelada')),
   fecha timestamptz not null default now()
 );
+
+-- migración idempotente: agrega 'cancelada' como estatus válido (borrado
+-- lógico -- solo aplica a solicitudes que seguían 'pendiente').
+alter table solicitudes_credito drop constraint if exists solicitudes_credito_estatus_check;
+alter table solicitudes_credito add constraint solicitudes_credito_estatus_check check (estatus in ('pendiente', 'aprobado', 'rechazado', 'cancelada'));
 
 -- Un plan de pago/refinanciamiento posible para una tarjeta (ej. el
 -- ejemplo de la portada del PDF: "reestructura tu saldo a 12/18/24 meses").
@@ -194,8 +218,13 @@ create table if not exists polizas_seguro (
   cobertura text not null,
   prima_mensual numeric not null check (prima_mensual > 0),
   vigencia_fin date not null,
-  estatus text not null default 'activa' check (estatus in ('cotizada', 'activa', 'vencida'))
+  estatus text not null default 'activa' check (estatus in ('cotizada', 'activa', 'vencida', 'cancelada'))
 );
+
+-- migración idempotente: agrega 'cancelada' como estatus válido (borrado
+-- lógico -- aplica a pólizas cotizadas o activas).
+alter table polizas_seguro drop constraint if exists polizas_seguro_estatus_check;
+alter table polizas_seguro add constraint polizas_seguro_estatus_check check (estatus in ('cotizada', 'activa', 'vencida', 'cancelada'));
 
 create table if not exists siniestros (
   id text primary key,
@@ -222,8 +251,12 @@ create table if not exists habitos_financieros (
   id text primary key,
   usuario_id text not null references usuarios(id),
   habito text not null,
-  racha_dias integer not null default 0 check (racha_dias >= 0)
+  racha_dias integer not null default 0 check (racha_dias >= 0),
+  activo boolean not null default true
 );
+
+-- migración idempotente: `activo` es el borrado lógico de un hábito.
+alter table habitos_financieros add column if not exists activo boolean not null default true;
 
 -- ============================================================
 -- Índices

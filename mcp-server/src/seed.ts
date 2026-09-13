@@ -78,6 +78,15 @@ async function main() {
 
   // --- Crédito (mismos números que el ejemplo de la portada del brief) ---
   await pool.query(
+    `insert into productos_credito (id, tipo, nombre, tasa_referencia, monto_maximo, plazo_maximo_meses, descripcion) values
+       ('prod-personal', 'personal', 'Crédito Personal Banorte', 32.4, 300000, 48, 'Sin garantía, para cualquier fin'),
+       ('prod-hipotecario', 'hipotecario', 'Crédito Hipotecario Banorte', 11.8, 5000000, 240, 'Para compra de vivienda'),
+       ('prod-automotriz', 'automotriz', 'Crédito Automotriz Banorte', 14.5, 800000, 60, 'Para compra de auto nuevo o seminuevo'),
+       ('prod-tarjeta', 'tarjeta', 'Tarjeta de Crédito Banorte', 32.4, 200000, 1, 'Línea revolvente, sin plazo fijo')
+     on conflict (id) do nothing`,
+  );
+
+  await pool.query(
     `insert into tarjetas_credito (id, usuario_id, alias, limite_credito, saldo_actual, tasa_anual) values
        ('tarjeta-1', 'demo-user', 'Tarjeta Oro', 20000, 18400, 32.4)
      on conflict (id) do nothing`,
