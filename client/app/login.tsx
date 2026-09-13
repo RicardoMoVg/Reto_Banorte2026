@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { router } from 'expo-router';
 import { useRef, useState, type ReactNode, type Ref } from 'react';
 import {
   KeyboardAvoidingView,
@@ -41,7 +42,7 @@ const LEMA = 'La app bancaria hecha para ti.';
  * despegarse del menta del degradado.
  */
 export default function Login() {
-  const { iniciarSesion, registrarse, cargando } = useSesion();
+  const { iniciarSesion, cargando } = useSesion();
   const insets = useSafeAreaInsets();
   const refContrasena = useRef<TextInput>(null);
 
@@ -87,30 +88,6 @@ export default function Login() {
     setError(null);
     try {
       await iniciarSesion(correo.trim(), contrasena);
-    } catch (err) {
-      setError(mensajeDeError(err));
-    }
-  }
-
-  async function handleRegistro() {
-    setError(null);
-    setAviso(null);
-
-    if (!CORREO_VALIDO.test(correo.trim())) {
-      setError('Escribe un correo electrónico válido para registrarte.');
-      return;
-    }
-    if (!contrasena || contrasena.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.');
-      return;
-    }
-
-    try {
-      const { requiereConfirmacion } = await registrarse(correo.trim(), contrasena);
-      if (requiereConfirmacion) {
-        setAviso('Cuenta creada. Revisa tu correo para confirmarla antes de entrar.');
-      }
-      // Si no requiere confirmación, registrarse() ya abrió la sesión.
     } catch (err) {
       setError(mensajeDeError(err));
     }
@@ -211,7 +188,9 @@ export default function Login() {
                   hitSlop={espacio.sm}
                   disabled={cargando}
                   onPress={() => {
-                    handleRegistro();
+                    setError(null);
+                    setAviso(null);
+                    router.push('/registro');
                   }}
                 >
                   <Text style={styles.pieEnlace}>Regístrate</Text>

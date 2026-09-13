@@ -87,6 +87,7 @@ function Navegador() {
 
       <Stack.Protected guard={!sesion}>
         <Stack.Screen name="login" />
+        <Stack.Screen name="registro" options={{ animation: 'slide_from_right' }} />
       </Stack.Protected>
     </Stack>
   );
