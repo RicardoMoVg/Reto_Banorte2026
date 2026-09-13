@@ -120,10 +120,18 @@ create table if not exists perfiles_inversion (
 create table if not exists instrumentos (
   id text primary key,
   nombre text not null,
-  tipo text not null check (tipo in ('accion', 'fondo', 'cetes', 'etf')),
+  tipo text not null check (tipo in ('accion', 'fondo', 'cetes', 'etf', 'divisa')),
   riesgo text not null check (riesgo in ('bajo', 'medio', 'alto')),
-  rendimiento_anual_estimado numeric not null -- % anual, para poder simular ("si invierto X...")
+  -- % anual, para poder simular ("si invierto X..."). Para 'divisa' esto es
+  -- una apreciación estimada contra MXN, no un rendimiento fijo real (una
+  -- divisa fluctúa) -- simplificación aceptada para el demo, no modelamos
+  -- tipo de cambio en vivo.
+  rendimiento_anual_estimado numeric not null
 );
+
+-- migración idempotente: agrega 'divisa' como tipo válido de instrumento.
+alter table instrumentos drop constraint if exists instrumentos_tipo_check;
+alter table instrumentos add constraint instrumentos_tipo_check check (tipo in ('accion', 'fondo', 'cetes', 'etf', 'divisa'));
 
 create table if not exists posiciones_portafolio (
   id text primary key,

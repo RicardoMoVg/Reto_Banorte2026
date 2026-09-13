@@ -515,6 +515,8 @@ const INSTRUMENTOS_MOCK: Instrumento[] = [
   { id: 'inst-1', nombre: 'Fondo Banorte Renta Variable', tipo: 'fondo', riesgo: 'alto', rendimientoAnualEstimado: 11.5 },
   { id: 'inst-2', nombre: 'CETES 28 días', tipo: 'cetes', riesgo: 'bajo', rendimientoAnualEstimado: 10.8 },
   { id: 'inst-3', nombre: 'ETF S&P 500', tipo: 'etf', riesgo: 'medio', rendimientoAnualEstimado: 9.2 },
+  { id: 'inst-4', nombre: 'Dólar estadounidense (USD)', tipo: 'divisa', riesgo: 'medio', rendimientoAnualEstimado: 4.5 },
+  { id: 'inst-5', nombre: 'Euro (EUR)', tipo: 'divisa', riesgo: 'medio', rendimientoAnualEstimado: 3.8 },
 ];
 
 export async function getInstrumentos(
