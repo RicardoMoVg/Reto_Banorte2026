@@ -212,8 +212,10 @@ const styles = StyleSheet.create({
    *  A2UI tiene que saber que existe un tablero. */
   quitar: {
     position: 'absolute',
-    top: -espacio.sm,
-    right: -espacio.sm,
+    // DENTRO de la tarjeta, no encima del borde: con offsets negativos el
+    // contenedor del scroll la recortaba y solo se veia media X.
+    top: espacio.sm,
+    right: espacio.sm,
     width: 26,
     height: 26,
     alignItems: 'center',

@@ -3,6 +3,11 @@ import { RastreadorMetas } from '../../components/RastreadorMetas';
 import { TarjetaSaldo } from '../../components/TarjetaSaldo';
 import { ListaTransacciones } from '../../components/ListaTransacciones';
 import { ComparativoGastos } from '../../components/ComparativoGastos';
+import { GraficoBarras_H } from '../../components/GraphBar_H';
+import { GraficoBarras_V } from '../../components/GraphBar_V';
+import { GraphCircle } from '../../components/GraphCircle';
+import { GraphSemiCircle } from '../../components/GraphSemiCircle';
+import { GraphSpline } from '../../components/GraphSpline';
 import { ActionCardSelector } from '../../components/chat/ActionCardSelector';
 import { ConfirmarAccion } from '../../components/chat/ConfirmarAccion';
 import { PropuestaAhorro } from '../../components/chat/PropuestaAhorro';
@@ -23,6 +28,16 @@ export const catalogoA2ui: Record<string, ComponentType<any>> = {
   TarjetaSaldo,
   ListaTransacciones,
   ComparativoGastos,
+
+  // Graficas genericas: todas reciben la MISMA forma de props
+  // ({titulo, mensajeAgente, categorias}), que es lo que permite que una
+  // sola tool (`mostrarGrafica`) alimente a las cinco -- el prerrequisito
+  // de constitution.md 4.4. El modelo elige cual, no el codigo.
+  GraficaPay: GraphCircle,
+  GraficaDona: GraphSemiCircle,
+  GraficaBarras: GraficoBarras_V,
+  GraficaBarrasH: GraficoBarras_H,
+  GraficaLineas: GraphSpline,
 
   // De acción (components/chat/): el usuario acepta o rechaza, y su
   // respuesta vuelve al agente. Contrato en components/chat/tipos.ts.

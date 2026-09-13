@@ -281,3 +281,33 @@ export const schemaTarjetaAccion = z.object({
     .describe('Cómo nombrar esta acción en la frase "Acepto <etiqueta>." SIN cifras.'),
   mensajeAgente: z.string().describe('Contexto breve, una línea.'),
 });
+
+/**
+ * Grafica generica: el modelo elige la FORMA del grafico, no el codigo.
+ *
+ * Las cinco graficas del catalogo comparten la misma forma de props
+ * ({titulo, mensajeAgente, categorias}), asi que una sola tool las
+ * alimenta a todas -- el patron de constitution.md 4.4. Sin esto, pedir
+ * "una grafica de pie" devolvia barras, porque barras era lo unico
+ * registrado.
+ */
+export const schemaGrafica = z.object({
+  componente: z
+    .enum(['GraficaPay', 'GraficaDona', 'GraficaBarras', 'GraficaBarrasH', 'GraficaLineas'])
+    .describe(
+      'Que forma de grafico usar. "GraficaPay": pastel/pie, para ver proporciones de un total. ' +
+        '"GraficaDona": dona/semicirculo. "GraficaBarras": barras verticales, para comparar. ' +
+        '"GraficaBarrasH": barras horizontales, mejor con nombres largos. ' +
+        '"GraficaLineas": linea, para tendencia. Respeta lo que pida el usuario: si dice ' +
+        '"pie" o "pastel" usa GraficaPay, si dice "barras" usa GraficaBarras.',
+    ),
+  titulo: z.string().describe('Encabezado del grafico, ej. "Tus gastos de septiembre".'),
+  agregarAInicio: z
+    .boolean()
+    .optional()
+    .describe(
+      'true SOLO si el usuario pidio que quede fijo en su pantalla de inicio ' +
+        '("agregalo a mi dashboard", "ponlo en mi inicio").',
+    ),
+  mensajeAgente: z.string().describe('Insight breve sobre lo que se ve, una linea.'),
+});

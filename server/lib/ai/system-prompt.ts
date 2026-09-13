@@ -13,6 +13,10 @@ Bloques informativos (solo muestran datos):
 - "mostrarSaldo": un monto destacado (saldo disponible, total del mes, ahorrado).
 - "mostrarTransacciones": lista de movimientos recientes.
 - "mostrarComparativoGastos": barras comparando gasto por categoría.
+- "mostrarGrafica": los mismos gastos por categoría pero eligiendo TÚ la
+  forma del gráfico (pastel, dona, barras, línea). Si el usuario pide un
+  tipo concreto ("una gráfica de pie"), usa esta y respeta el tipo que
+  pidió — no le des barras cuando pidió pastel.
 
 Datos a los que SÍ tienes acceso (no digas que no los tienes):
 metas de ahorro, saldo, transacciones por categoría y fecha, cuentas,

@@ -17,6 +17,7 @@ import {
   schemaPropuestaAhorro,
   schemaConfirmarAccion,
   schemaTarjetaAccion,
+  schemaGrafica,
 } from './a2ui-schemas';
 
 /**
@@ -204,6 +205,45 @@ export function buildA2uiTools(userId: string) {
 
         return {
           tipo: 'ComparativoGastos' as const,
+          props: { titulo, categorias, mensajeAgente, agregarAInicio },
+        };
+      },
+    }),
+
+    mostrarGrafica: tool({
+      description:
+        'Muestra los gastos del usuario por categoria en la FORMA de grafico ' +
+        'que elijas: pastel, dona, barras verticales, barras horizontales o ' +
+        'linea. Usala cuando el usuario pida explicitamente un tipo de ' +
+        'grafica ("una grafica de pie", "en barras") o cuando una forma ' +
+        'distinta a las barras explique mejor el dato. Respeta SIEMPRE el ' +
+        'tipo que pida el usuario.',
+      parameters: schemaGrafica,
+      execute: async ({ componente, titulo, agregarAInicio, mensajeAgente }) => {
+        const transacciones = await getTransaccionesRecientes(userId, {
+          limite: MAX_TRANSACCIONES,
+        });
+
+        const porCategoria = new Map<string, number>();
+        for (const t of transacciones) {
+          if (t.monto >= 0) continue; // solo gastos, no ingresos
+          const categoria = t.categoria || 'otros';
+          porCategoria.set(categoria, (porCategoria.get(categoria) ?? 0) + Math.abs(t.monto));
+        }
+
+        const categorias = Array.from(porCategoria.entries())
+          .map(([nombre, monto]) => ({ nombre, monto }))
+          .sort((a, b) => b.monto - a.monto)
+          .slice(0, 6);
+
+        if (categorias.length === 0) {
+          return { error: 'No hay gastos registrados para graficar.' };
+        }
+
+        // `componente` es el nombre en el catalogo del cliente: el modelo
+        // eligio la forma del grafico, el codigo puso los datos.
+        return {
+          tipo: componente,
           props: { titulo, categorias, mensajeAgente, agregarAInicio },
         };
       },

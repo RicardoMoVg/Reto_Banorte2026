@@ -47,11 +47,15 @@ export function PropuestaDeAnclaje({ bloque }: { bloque: BloqueAnclado }) {
 }
 
 const styles = StyleSheet.create({
+  /**
+   * Se apila en vertical, no en horizontal.
+   *
+   * En fila, dentro del panel flotante (mucho mas angosto que la pantalla),
+   * el texto empujaba al boton fuera del area visible: el usuario veia la
+   * pregunta y ningun boton que tocar. Apilado entra siempre, sin importar
+   * el ancho del contenedor.
+   */
   barra: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
     gap: espacio.sm,
     width: '100%',
     maxWidth: 420,
@@ -65,12 +69,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: espacio.lg,
     paddingVertical: espacio.md,
   },
-  hecho: { backgroundColor: colores.marcaSuave },
+  hecho: { flexDirection: 'row', alignItems: 'center', backgroundColor: colores.marcaSuave },
   hechoTexto: { ...tipografia.pie, color: colores.textoSecundario },
   pregunta: { ...tipografia.pie, flexShrink: 1 },
   boton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
     gap: espacio.xs,
     borderRadius: radio.sm,
     backgroundColor: colores.marca,
