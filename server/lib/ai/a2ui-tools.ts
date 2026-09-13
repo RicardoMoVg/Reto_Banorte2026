@@ -207,11 +207,16 @@ export function buildA2uiTools(userId: string) {
         // A diferencia de mostrarProgresoMeta (solo lectura), aquí un
         // metaId que no existe SÍ debe truncar en error -- es dinero
         // moviéndose de verdad, no se vale adivinar en silencio a cuál
-        // meta cayó.
+        // meta cayó. Mismo criterio si no manda metaId pero hay más de
+        // una meta: no se adivina, se le pregunta al usuario cuál.
         let meta;
         if (metaId) {
           meta = metas.find((m) => m.id === metaId);
           if (!meta) return { error: `No se encontró una meta activa con id "${metaId}".` };
+        } else if (metas.length > 1) {
+          return {
+            error: `El usuario tiene varias metas: ${metas.map((m) => m.titulo).join(', ')}. Pregúntale a cuál se refiere.`,
+          };
         } else {
           meta = metas[0];
           if (!meta) return { error: 'El usuario no tiene metas registradas.' };
@@ -285,6 +290,10 @@ export function buildA2uiTools(userId: string) {
         if (cuentaId) {
           cuenta = cuentas.find((c) => c.id === cuentaId);
           if (!cuenta) return { error: `No se encontró una cuenta con id "${cuentaId}".` };
+        } else if (cuentas.length > 1) {
+          return {
+            error: `El usuario tiene varias cuentas: ${cuentas.map((c) => c.alias).join(', ')}. Pregúntale en cuál.`,
+          };
         } else {
           cuenta = cuentas[0];
           if (!cuenta) return { error: 'El usuario no tiene cuentas registradas.' };
@@ -365,6 +374,10 @@ export function buildA2uiTools(userId: string) {
         if (tarjetaId) {
           tarjeta = tarjetas.find((t) => t.id === tarjetaId);
           if (!tarjeta) return { error: `No se encontró una tarjeta con id "${tarjetaId}".` };
+        } else if (tarjetas.length > 1) {
+          return {
+            error: `El usuario tiene varias tarjetas: ${tarjetas.map((t) => t.alias).join(', ')}. Pregúntale en cuál.`,
+          };
         } else {
           tarjeta = tarjetas[0];
           if (!tarjeta) return { error: 'El usuario no tiene tarjetas de crédito registradas.' };
