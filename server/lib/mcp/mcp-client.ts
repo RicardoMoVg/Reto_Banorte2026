@@ -856,6 +856,110 @@ export async function getTarjetasCredito(userId: string): Promise<TarjetaCredito
   }));
 }
 
+export interface CompraTarjeta {
+  id: string;
+  tarjetaId: string;
+  descripcion: string;
+  monto: number;
+  fecha: string;
+  mesesMsi: number | null;
+}
+
+const COMPRAS_TARJETA_MOCK: CompraTarjeta[] = [
+  { id: 'compra-1', tarjetaId: 'tarjeta-1', descripcion: 'Pantalla LED 55"', monto: 12000, fecha: new Date().toISOString(), mesesMsi: 12 },
+  { id: 'compra-2', tarjetaId: 'tarjeta-1', descripcion: 'Supermercado', monto: 6400, fecha: new Date().toISOString(), mesesMsi: null },
+];
+
+export async function crearCompraTarjeta(
+  userId: string,
+  tarjetaId: string,
+  descripcion: string,
+  monto: number,
+): Promise<CompraTarjeta | { error: string }> {
+  if (USE_MOCK) {
+    const existeTarjeta = TARJETAS_CREDITO_MOCK.some((t) => t.id === tarjetaId);
+    if (!existeTarjeta) return { error: 'Tarjeta no encontrada o no pertenece al usuario.' };
+
+    const compra: CompraTarjeta = {
+      id: `compra-mock-${COMPRAS_TARJETA_MOCK.length + 1}`,
+      tarjetaId,
+      descripcion,
+      monto,
+      fecha: new Date().toISOString(),
+      mesesMsi: null,
+    };
+    COMPRAS_TARJETA_MOCK.push(compra);
+    return compra;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; descripcion: string; monto: string | number; fecha: string; meses_msi: number | null }
+  >('crear_compra_tarjeta', { userId, tarjetaId, descripcion, monto });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    tarjetaId,
+    descripcion: resultado.descripcion,
+    monto: Number(resultado.monto),
+    fecha: resultado.fecha,
+    mesesMsi: resultado.meses_msi,
+  };
+}
+
+export async function getComprasTarjeta(
+  userId: string,
+  tarjetaId?: string,
+): Promise<CompraTarjeta[]> {
+  if (USE_MOCK) {
+    return tarjetaId ? COMPRAS_TARJETA_MOCK.filter((c) => c.tarjetaId === tarjetaId) : COMPRAS_TARJETA_MOCK;
+  }
+
+  const rows = await llamarTool<
+    Array<{ id: string; tarjeta_id: string; descripcion: string; monto: string | number; fecha: string; meses_msi: number | null }>
+  >('get_compras_tarjeta', { userId, tarjetaId });
+
+  return rows.map((c) => ({
+    id: c.id,
+    tarjetaId: c.tarjeta_id,
+    descripcion: c.descripcion,
+    monto: Number(c.monto),
+    fecha: c.fecha,
+    mesesMsi: c.meses_msi,
+  }));
+}
+
+export async function diferirAMsi(
+  userId: string,
+  compraId: string,
+  mesesMsi: number,
+): Promise<CompraTarjeta | { error: string }> {
+  if (USE_MOCK) {
+    const compra = COMPRAS_TARJETA_MOCK.find((c) => c.id === compraId && c.mesesMsi == null);
+    if (!compra) return { error: 'Compra no encontrada, no pertenece al usuario, o ya está diferida.' };
+    compra.mesesMsi = mesesMsi;
+    return compra;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; tarjeta_id: string; descripcion: string; monto: string | number; fecha: string; meses_msi: number | null }
+  >('diferir_a_msi', { userId, compraId, mesesMsi });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    tarjetaId: resultado.tarjeta_id,
+    descripcion: resultado.descripcion,
+    monto: Number(resultado.monto),
+    fecha: resultado.fecha,
+    mesesMsi: resultado.meses_msi,
+  };
+}
+
 export interface PlanPago {
   id: string;
   plazoMeses: number;

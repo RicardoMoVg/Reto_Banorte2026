@@ -173,6 +173,37 @@ create table if not exists tarjetas_credito (
   tasa_anual numeric not null -- % anual, usado para CAT
 );
 
+-- Un cargo individual a una tarjeta de crédito -- `tarjetas_credito` solo
+-- tenía `saldo_actual` agregado, sin historial de compras. `meses_msi` es
+-- null en una compra normal; se llena cuando se difiere a meses sin
+-- intereses (crear_compra_tarjeta la deja null, diferir_a_msi la fija).
+create table if not exists compras_tarjeta (
+  id text primary key,
+  tarjeta_id text not null references tarjetas_credito(id),
+  usuario_id text not null references usuarios(id),
+  descripcion text not null,
+  monto numeric not null check (monto > 0),
+  fecha timestamptz not null default now(),
+  meses_msi integer check (meses_msi > 0)
+);
+
+-- Mantiene tarjetas_credito.saldo_actual consistente con sus compras, mismo
+-- criterio que trg_actualizar_saldo_cuenta (append-only, solo suma en
+-- INSERT). Diferir a MSI no cambia el saldo total de la tarjeta -- solo
+-- cambia cómo se paga esa compra, no cuánto se debe.
+create or replace function actualizar_saldo_tarjeta() returns trigger as $$
+begin
+  update tarjetas_credito set saldo_actual = saldo_actual + new.monto where id = new.tarjeta_id;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_actualizar_saldo_tarjeta on compras_tarjeta;
+create trigger trg_actualizar_saldo_tarjeta
+  after insert on compras_tarjeta
+  for each row
+  execute function actualizar_saldo_tarjeta();
+
 create table if not exists solicitudes_credito (
   id text primary key,
   usuario_id text not null references usuarios(id),
@@ -291,6 +322,8 @@ create index if not exists idx_transacciones_usuario on transacciones(usuario_id
 create index if not exists idx_transacciones_cuenta on transacciones(cuenta_id);
 create index if not exists idx_posiciones_usuario on posiciones_portafolio(usuario_id);
 create index if not exists idx_tarjetas_usuario on tarjetas_credito(usuario_id);
+create index if not exists idx_compras_tarjeta_tarjeta on compras_tarjeta(tarjeta_id);
+create index if not exists idx_compras_tarjeta_usuario on compras_tarjeta(usuario_id, fecha desc);
 create index if not exists idx_solicitudes_usuario on solicitudes_credito(usuario_id);
 create index if not exists idx_planes_pago_tarjeta on planes_pago(tarjeta_id);
 create index if not exists idx_contactos_usuario on contactos_pago(usuario_id);
