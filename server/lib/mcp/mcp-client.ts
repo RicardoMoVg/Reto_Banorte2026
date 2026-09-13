@@ -135,6 +135,27 @@ async function llamarTool<T>(
   return JSON.parse(bloque.text) as T;
 }
 
+// ============================================================
+// Compartido
+// ============================================================
+
+export interface PerfilBanca {
+  id: string;
+  nombre: string;
+}
+
+export async function crearUsuario(userId: string, nombre: string): Promise<PerfilBanca> {
+  if (USE_MOCK) return { id: userId, nombre };
+
+  return llamarTool<PerfilBanca>('crear_usuario', { userId, nombre });
+}
+
+export async function getUsuario(userId: string): Promise<PerfilBanca | null> {
+  if (USE_MOCK) return { id: userId, nombre: 'Usuario Demo' };
+
+  return llamarTool<PerfilBanca | null>('get_usuario', { userId });
+}
+
 export async function getMetasUsuario(
   userId: string,
   incluirArchivadas = false,
