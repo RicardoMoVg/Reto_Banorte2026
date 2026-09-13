@@ -7,7 +7,7 @@ import {
   ListaTransacciones,
   RastreadorMetas,
   TarjetaSaldo,
-} from '@/components/generative';
+} from '@/components/ai-to-ui';
 import type { WidgetAnclado } from './tipos';
 
 /**

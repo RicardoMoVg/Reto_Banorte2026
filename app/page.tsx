@@ -11,7 +11,7 @@ import type { AI } from './acciones/ai';
 export default function Page() {
   const [input, setInput] = useState('');
   const [conversation, setConversation] = useUIState<typeof AI>();
-  const { enviarMensaje } = useActions<typeof AI>();
+  const { generateUIFromAI } = useActions<typeof AI>();
 
   // Widgets que el usuario ancló desde el chat. Guardamos JSON plano
   // (tipo + datos), NO nodos de React — ver components/dashboard/tipos.ts.
@@ -90,7 +90,7 @@ export default function Page() {
 
     // 2) Llamamos al Server Action — devuelve un nodo de React (texto o
     //    bloque A2UI) que se agrega tal cual al historial.
-    const respuesta = await enviarMensaje(value);
+    const respuesta = await generateUIFromAI(value);
     setConversation((prev) => [...prev, respuesta]);
   }
 

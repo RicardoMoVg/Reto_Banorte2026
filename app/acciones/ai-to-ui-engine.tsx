@@ -7,20 +7,31 @@ import { SYSTEM_PROMPT } from '@/lib/ai/system-prompt';
 import type { HistorialMutable, MensajeUI } from '@/lib/ai/rsc-types';
 
 /**
- * El orquestador (capa "LLM" del A2UI). Recibe el mensaje del usuario, lo
- * agrega al AIState (historial que se le manda al modelo), y deja que el
- * modelo decida entre responder en texto o invocar una tool que devuelve un
- * componente de React ya renderizado.
+ * MOTOR AI-TO-UI (A2UI)
+ * =====================
  *
- * Esto es lo que distingue A2UI de un chatbot normal: las tools no devuelven
- * JSON para que el cliente lo interprete — devuelven JSX real, que viaja al
- * cliente como parte del stream de React Server Components.
+ * Punto único donde el modelo deja de producir texto y empieza a producir
+ * interfaz. Implementa la capa 1 (LLM como orquestador) del protocolo:
+ * recibe el mensaje del usuario, lo agrega al AIState (el historial que se
+ * le manda al modelo) y deja que el modelo decida entre responder en texto
+ * o invocar un bloque.
  *
- * El catálogo de bloques vive en lib/ai/bloques.tsx.
+ * Lo que distingue AI-to-UI de un chatbot normal: los bloques no devuelven
+ * JSON para que el cliente lo interprete y dibuje — devuelven JSX ya
+ * renderizado, que viaja al cliente dentro del stream de React Server
+ * Components (de ahí `streamUI`, y de ahí que esto sea una Server Action y
+ * no un Route Handler).
+ *
+ * Las tres capas y dónde vive cada una:
+ *   1. LLM   -> este archivo
+ *   2. MCP   -> lib/mcp/mcp-client.ts   (pendiente de conectar, ver TODO)
+ *   3. A2UI  -> components/ai-to-ui/    (el catálogo de bloques)
+ *
+ * El mapeo decisión-del-modelo -> bloque vive en lib/ai/bloques.tsx.
  */
 // El tipo de retorno es explícito a propósito: sin él, TS no puede cerrar
-// el ciclo AI -> enviarMensaje -> AI y todo termina en `any`.
-export async function enviarMensaje(input: string): Promise<MensajeUI> {
+// el ciclo AI -> generateUIFromAI -> AI y todo termina en `any`.
+export async function generateUIFromAI(input: string): Promise<MensajeUI> {
   const history = getMutableAIState() as HistorialMutable;
 
   history.update([...history.get(), { role: 'user', content: input }]);

@@ -4,7 +4,7 @@ import {
   ListaTransacciones,
   RastreadorMetas,
   TarjetaSaldo,
-} from '@/components/generative';
+} from '@/components/ai-to-ui';
 import type { HistorialMutable } from './rsc-types';
 
 /**
@@ -12,8 +12,8 @@ import type { HistorialMutable } from './rsc-types';
  * RENDERIZADO, no JSON para que el cliente lo interprete.
  *
  * Para agregar un bloque nuevo:
- *   1. Crear el componente en components/generative/ (con su <BotonPin />).
- *   2. Exportarlo en components/generative/index.ts.
+ *   1. Crear el componente en components/ai-to-ui/ (con su <BotonPin />).
+ *   2. Exportarlo en components/ai-to-ui/index.ts.
  *   3. Agregar su schema + tool aquí.
  *   4. Agregar su `case` en components/dashboard/DashboardComponible.tsx.
  */

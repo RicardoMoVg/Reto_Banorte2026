@@ -74,18 +74,29 @@ lock file.)
 mosaico/
 ├── app/
 │   ├── acciones/
-│   │   ├── agente.tsx            # 🧠 Server Action: streamUI + tools (el orquestador)
+│   │   ├── ai-to-ui-engine.tsx   # 🧠 capa 1 (LLM): Server Action con streamUI
 │   │   └── ai.ts                  # createAI: puente Server Action <-> estado del cliente
 │   ├── layout.tsx                 # monta <AI> envolviendo toda la app
 │   ├── page.tsx                    # UI del chat: useActions/useUIState (guarda ReactNode)
 │   └── globals.css
 │
 ├── components/
-│   └── generative/                # 🧱 Bloques A2UI — SOLO UI, cero lógica de IA/MCP
-│       └── RastreadorMetas.tsx
+│   ├── ai-to-ui/                  # 🧱 capa 3 (A2UI): bloques — SOLO UI, cero lógica IA/MCP
+│   │   ├── RastreadorMetas.tsx
+│   │   ├── TarjetaSaldo.tsx
+│   │   ├── ListaTransacciones.tsx
+│   │   ├── ComparativoGastos.tsx
+│   │   ├── tipos.ts                 # PropsBloque: props que todo bloque comparte
+│   │   └── index.ts                  # catálogo (barrel)
+│   └── dashboard/                  # Dashboard Componible: anclar/desanclar bloques
+│       ├── DashboardComponible.tsx   # motor de rehidratación (switch tipo -> bloque)
+│       ├── BotonPin.tsx
+│       ├── pin-context.tsx            # puente cliente <-> bloques nacidos en el server
+│       └── tipos.ts
 │
 ├── lib/
 │   ├── ai/
+│   │   ├── bloques.tsx              # 🔗 mapeo decisión del modelo -> bloque (las tools)
 │   │   ├── system-prompt.ts        # personalidad/instrucciones del agente
 │   │   └── rsc-types.ts             # tipos de AIState/UIState (evita imports circulares)
 │   └── mcp/
@@ -104,9 +115,9 @@ mosaico/
 └── tailwind.config.ts / tsconfig.json / next.config.mjs
 ```
 
-**Regla de oro:** `components/generative/` no importa nada de `ai`, `ai/rsc`
+**Regla de oro:** `components/ai-to-ui/` no importa nada de `ai`, `ai/rsc`
 ni `lib/mcp`. Solo recibe props y se ve bonito. Toda la orquestación vive en
-`app/acciones/agente.tsx`.
+`app/acciones/ai-to-ui-engine.tsx`.
 
 ## ⚠️ Qué cambió (y qué se eliminó) en este refactor
 
@@ -114,10 +125,10 @@ Antes teníamos `app/api/chat/route.ts` (`streamText` + `tools`, consumido con
 `useChat`). Ahora que la arquitectura exige A2UI/RSC de verdad, **eliminé**:
 - `app/api/chat/route.ts`
 - `lib/ai/tools.ts`
-- `components/ui-blocks/` (movido y renombrado a `components/generative/`)
+- `components/ui-blocks/` (movido a `components/generative/`, hoy `components/ai-to-ui/`)
 
-Y los reemplacé por `app/acciones/agente.tsx` + `app/acciones/ai.ts`. Esto es
-intencional, no un descuido: `streamUI` (de `@ai-sdk/rsc`) solo funciona
+Y los reemplacé por `app/acciones/ai-to-ui-engine.tsx` + `app/acciones/ai.ts`. Esto es
+intencional, no un descuido: `streamUI` (de `ai/rsc`) solo funciona
 dentro de una **Server Action**, porque su valor de retorno es un stream de
 React Server Components — un Route Handler no puede serializar eso, solo
 `Response` HTTP normal (por eso la vez pasada usamos `streamText`). Con esta
@@ -135,22 +146,23 @@ directo a la Server Action.
 ## Cómo fluye una pregunta
 
 1. El usuario escribe en `page.tsx` → se pinta su mensaje optimistamente en
-   `UIState` y se llama a `enviarMensaje(input)` (Server Action).
-2. `agente.tsx` mete el mensaje al `AIState` (historial plano) y llama a
+   `UIState` y se llama a `generateUIFromAI(input)` (Server Action).
+2. `ai-to-ui-engine.tsx` mete el mensaje al `AIState` (historial plano) y llama a
    `streamUI({ model, system, messages, tools })`.
-3. El modelo decide: texto plano (`text: ...`) o invocar
-   `mostrarProgresoMeta` (`tools.mostrarProgresoMeta.generate`).
+3. El modelo decide: texto plano (`text: ...`) o invocar uno de los bloques
+   (`mostrarProgresoMeta`, `mostrarSaldo`, `mostrarTransacciones`,
+   `mostrarComparativoGastos`), definidos en `lib/ai/bloques.tsx`.
 4. Si invoca la tool, `generate` hace `yield` de un skeleton, y luego
    `return` del componente `<RastreadorMetas />` ya con props — eso es lo
    que viaja al cliente como JSX real, no JSON.
 5. `page.tsx` recibe `{ id, role, display }` y lo agrega a `UIState` — el
    `display` (el `ReactNode`) se renderiza tal cual con `{m.display}`.
 
-## MCP: aún no conectado a esta tool (a propósito)
+## MCP: aún no conectado a los bloques (a propósito)
 
-Tal como está, `mostrarProgresoMeta` recibe `titulo`/`porcentaje` que el
-**modelo genera**, no datos reales — dejé un comentario `TODO(MCP)` exacto
-en `app/acciones/agente.tsx` marcando dónde reemplazarlo por
+Tal como está, los bloques reciben los datos que el **modelo genera**, no
+datos reales — hay un comentario `TODO(MCP)` en cada tool de
+`lib/ai/bloques.tsx` marcando dónde reemplazarlo por
 `getMetasUsuario(userId)` de `lib/mcp/mcp-client.ts` (que ya existe, ya
 tiene fallback mock, y no necesita Postgres para funcionar hoy — ver
 sección de MCP más abajo). Mientras no se conecte, el agente puede
@@ -167,7 +179,7 @@ HTTP: habla el protocolo MCP por stdio y se levanta como proceso hijo.
 2. `lib/mcp/mcp-client.ts` — cliente vía `experimental_createMCPClient` de
    `ai`. Expone `getMetasUsuario`, `getTransaccionesRecientes`,
    `getSaldoUsuario`, con fallback a mock si no hay `DATABASE_URL`.
-3. (Pendiente, ver arriba) `app/acciones/agente.tsx` llamando a esas
+3. (Pendiente, ver arriba) `app/acciones/ai-to-ui-engine.tsx` llamando a esas
    funciones desde dentro de `generate`.
 
 ### Levantarlo (cuando haya Postgres)
@@ -182,7 +194,7 @@ npm run seed
 
 ## Siguiente bloque A2UI
 
-1. Crear `components/generative/NuevoBloque.tsx` (props tipadas + Framer Motion).
-2. En `app/acciones/agente.tsx`: agregar una entrada en `tools` con su
+1. Crear `components/ai-to-ui/NuevoBloque.tsx` (props tipadas + Framer Motion).
+2. En `app/acciones/ai-to-ui-engine.tsx`: agregar una entrada en `tools` con su
    `zod` schema y su `generate` (que `return`-ea el nuevo componente).
 3. Nada que tocar en `page.tsx` ni en `ai.ts` — el `display` ya es genérico.
