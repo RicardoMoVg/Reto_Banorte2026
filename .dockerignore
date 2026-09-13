@@ -1,0 +1,23 @@
+# Ver Dockerfile: el build context es la raíz del repo.
+
+**/node_modules
+**/.next
+**/.expo
+**/dist
+**/*.tsbuildinfo
+
+# secretos -- NUNCA deben entrar a una imagen (Railway los inyecta como
+# variables de entorno reales, no via archivo)
+**/.env
+**/.env.*
+!**/.env.example
+
+.git
+.claude
+.gitignore
+
+# no forman parte del deploy de server/+mcp-server
+client
+docs
+agente
+scripts

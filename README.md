@@ -188,6 +188,50 @@ client/                          # App Expo/React Native — Android, iOS, y web
 > del protocolo, no la versión con streaming granular — suficiente para el
 > alcance del reto.
 
+## Deploy (Railway) — para usar la app desde el celular
+
+`mcp-server/` no es un servicio aparte: `server/lib/mcp/mcp-client.ts` lo
+levanta como proceso hijo por stdio (`tsx` corriendo `mcp-server/src/server.ts`),
+asumiendo que vive como carpeta **hermana** de `server/` — igual que en local
+con `npm run dev`. Por eso solo hay que hostear `server/`, pero la imagen
+tiene que incluir `mcp-server/` completo al lado.
+
+El repo ya trae `Dockerfile` + `.dockerignore` + `railway.json` en la raíz
+para esto (multi-stage: instala ambos paquetes, corre `next build` en
+`server/`, y en runtime hace `next start -p $PORT`).
+
+**Pasos en Railway:**
+
+1. New Project → Deploy from GitHub repo → selecciona este repo.
+2. Root directory: la raíz del repo (`/`), NO `server/` — el build necesita
+   ver `server/` y `mcp-server/` juntos. Railway detecta el `Dockerfile`
+   solo (o usa `railway.json`, que ya lo fija explícito).
+3. Variables de entorno del servicio (Settings → Variables), las mismas que
+   `server/.env`:
+   - `GOOGLE_GENERATIVE_AI_API_KEY`
+   - `OPENAI_API_KEY`
+   - `DATABASE_URL` (la misma cadena de Supabase que usas en local)
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - **NO** pongas `AUTH_USUARIO_SIN_TOKEN` en producción — es el atajo de
+     desarrollo que salta la verificación del token (ver
+     `server/lib/auth/supabase.ts`); con él puesto, cualquiera que llegue al
+     API lee y escribe como ese usuario fijo.
+4. Deploy. Railway asigna una URL pública (`https://<algo>.up.railway.app`)
+   y su propio `$PORT` — el `Dockerfile` ya lo respeta, no hay que tocar nada.
+5. En `client/.env`, cambia `EXPO_PUBLIC_API_URL` a esa URL. **`expo start`
+   solo lee `.env` una vez al arrancar** (ver Gotcha en `client/AGENTS.md`):
+   mata el proceso de Expo y vuelve a correr `npm run web`/`npm run android`
+   después de cambiarlo.
+6. Desde el celular: `npx expo start` (o un build/APK) ya le habla al backend
+   real en Railway en vez de `localhost` — funciona en cualquier red, no
+   solo en la misma WiFi que la computadora.
+
+No hace falta ninguna variable en build time: ninguna ruta de `server/`
+prerrenderiza ni llama a Postgres/el LLM durante `next build` (todas son
+`export const runtime = 'nodejs'`, dinámicas) — Railway las inyecta en
+runtime y basta.
+
 ## Siguiente bloque A2UI
 
 1. Backend: Zod schema en `lib/ai/a2ui-schemas.ts` + tool en
