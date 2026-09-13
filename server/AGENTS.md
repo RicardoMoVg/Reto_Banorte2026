@@ -22,8 +22,15 @@ paquete.
 - `lib/ai/system-prompt.ts` — personalidad/instrucciones del agente.
 - `lib/ai/a2ui-schemas.ts` — un `z.object({...})` por bloque.
 - `lib/ai/a2ui-tools.ts` — el catálogo de tools (contrato exacto en
-  `constitution.md` 4.2). `buildA2uiTools(userId)` regresa el objeto que
-  usa `streamText`.
+  `constitution.md` 4.2). `buildA2uiTools(userId, tablero)` regresa el
+  objeto que usa `streamText`. El segundo argumento es lo que el usuario
+  tiene fijado en su Inicio **en este momento**: llega en el body de cada
+  request (el cliente lo manda desde `TableroProvider`) porque este
+  endpoint es stateless por diseño (`constitution.md` 3.1) y el tablero
+  vive en el cliente. Solo trae id/nombre/título/posición/ancho de cada
+  widget — **nunca sus props**, que es donde están los montos. Lo usa
+  `acomodarTablero` para validar contra widgets que existen de verdad en
+  vez de creerle un id al modelo.
 - `lib/mcp/mcp-client.ts` — única puerta al MCP. No la dupliques ni la
   rodees; si necesitas un dato nuevo, agrega una función aquí que llame a
   `mcp-server/` (o cae a mock si no hay `DATABASE_URL`).

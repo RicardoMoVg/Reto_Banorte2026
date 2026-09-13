@@ -957,7 +957,14 @@ server.tool(
 
     if (nombre) {
       valores.push(`%${nombre}%`);
-      condiciones.push(`nombre ilike $${valores.length}`);
+      // `ilike` ignora mayusculas pero NO acentos: buscar "Maria Lopez"
+      // no encontraba a "Maria Lopez" con tildes, y en una app en espaniol
+      // eso falla con Maria, Jose, Ramirez... Se normalizan los dos lados
+      // con translate() en vez de la extension `unaccent`, que habria que
+      // instalar en la base (y en Supabase no siempre esta disponible).
+      const sinAcentos = (expr: string) =>
+        `translate(${expr}, 'áàäéèëíìïóòöúùüñÁÀÄÉÈËÍÌÏÓÒÖÚÙÜÑ', 'aaaeeeiiiooouuunAAAEEEIIIOOOUUUN')`;
+      condiciones.push(`${sinAcentos('nombre')} ilike ${sinAcentos(`$${valores.length}`)}`);
     }
 
     const { rows } = await pool.query(
@@ -982,6 +989,39 @@ server.tool(
     clabe: z.string().optional().describe('CLABE interbancaria del contacto, si se conoce'),
   },
   async ({ userId, nombre, clabe }) => {
+    /**
+     * Si ya existe un contacto con ese nombre, se REUSA en vez de crear
+     * otro.
+     *
+     * Un flujo de varios turnos ("dame el nombre" -> "guardalo" ->
+     * "transfiere") termina llamando a esto mas de una vez, y quedaban dos
+     * "Senior Barriga": uno sin CLABE y otro con ella. Luego transferir
+     * fallaba por ambiguedad y el usuario no entendia por que, si el
+     * contacto "ya estaba".
+     *
+     * Si el que existe no tenia CLABE y ahora llega una, se completa --
+     * asi el segundo intento arregla el primero en vez de duplicarlo.
+     */
+    const existente = await pool.query(
+      `select id, nombre, clabe, activo from contactos_pago
+       where usuario_id = $1 and lower(nombre) = lower($2)`,
+      [userId, nombre],
+    );
+
+    if (existente.rows.length > 0) {
+      const contacto = existente.rows[0];
+      const actualizado = await pool.query(
+        `update contactos_pago
+         set clabe = coalesce($3, clabe), activo = true
+         where id = $1 and usuario_id = $2
+         returning id, nombre, clabe, activo`,
+        [contacto.id, userId, clabe ?? null],
+      );
+      return {
+        content: [{ type: 'text', text: JSON.stringify(actualizado.rows[0]) }],
+      };
+    }
+
     const { rows } = await pool.query(
       `insert into contactos_pago (id, usuario_id, nombre, clabe)
        values ('contacto-' || gen_random_uuid(), $1, $2, $3)
@@ -1082,16 +1122,82 @@ server.tool(
       };
     }
 
-    const { rows } = await pool.query(
-      `insert into transferencias (id, usuario_id, contacto_id, tipo, monto, concepto, estatus)
-       values ('transferencia-' || gen_random_uuid(), $1, $2, $3, $4, $5, 'completada')
-       returning id, tipo, monto, concepto, estatus, fecha`,
-      [userId, contactoId, tipo, monto, concepto ?? null],
+    const nombreContacto = await pool.query(
+      `select nombre from contactos_pago where id = $1`,
+      [contactoId],
     );
+    const nombre = nombreContacto.rows[0]?.nombre ?? 'contacto';
 
-    return {
-      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
-    };
+    /**
+     * Una transferencia mueve dinero, asi que tambien es un MOVIMIENTO.
+     *
+     * Antes solo se insertaba en `transferencias`, y el saldo sale de
+     * `sum(monto)` sobre `transacciones` -- resultado: transferias $300 y
+     * ni el saldo ni la lista de movimientos se enteraban. El dinero
+     * desaparecia de la vista del usuario.
+     *
+     * Las dos filas van en una transaccion: si la segunda falla, la
+     * primera no puede quedar suelta, o volveriamos al mismo hueco pero
+     * intermitente, que es peor.
+     */
+    const cliente = await pool.connect();
+    try {
+      await cliente.query('begin');
+
+      const { rows } = await cliente.query(
+        `insert into transferencias (id, usuario_id, contacto_id, tipo, monto, concepto, estatus)
+         values ('transferencia-' || gen_random_uuid(), $1, $2, $3, $4, $5, 'completada')
+         returning id, tipo, monto, concepto, estatus, fecha`,
+        [userId, contactoId, tipo, monto, concepto ?? null],
+      );
+
+      /**
+       * El movimiento cuelga de una CUENTA, no queda suelto.
+       *
+       * `cuenta_id` no es decorativo: el trigger trg_actualizar_saldo_cuenta
+       * solo corre `if new.cuenta_id is not null`. Insertarlo en null hacia
+       * que la suma de transacciones bajara pero `cuentas.saldo` se quedara
+       * igual -- dos saldos distintos para el mismo usuario segun quien
+       * preguntara.
+       *
+       * Se usa la cuenta de debito (de donde sale el dinero de una
+       * transferencia); si no hay, la primera que tenga.
+       */
+      const cuenta = await cliente.query(
+        `select id from cuentas where usuario_id = $1
+         order by (tipo = 'debito') desc, id
+         limit 1`,
+        [userId],
+      );
+
+      if (cuenta.rows.length === 0) {
+        throw new Error('El usuario no tiene ninguna cuenta de la cual descontar la transferencia.');
+      }
+
+      // 'recibida' es un cobro: entra dinero, monto positivo.
+      const signo = tipo === 'recibida' ? 1 : -1;
+      await cliente.query(
+        `insert into transacciones (id, usuario_id, cuenta_id, descripcion, monto, categoria, fecha)
+         values ('tx-' || gen_random_uuid(), $1, $2, $3, $4, 'transferencia', now())`,
+        [
+          userId,
+          cuenta.rows[0].id,
+          tipo === 'recibida' ? `Cobro de ${nombre}` : `Transferencia a ${nombre}`,
+          signo * monto,
+        ],
+      );
+
+      await cliente.query('commit');
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+      };
+    } catch (error) {
+      await cliente.query('rollback');
+      throw error;
+    } finally {
+      cliente.release();
+    }
   },
 );
 

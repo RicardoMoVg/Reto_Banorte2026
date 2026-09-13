@@ -1,3 +1,4 @@
+import { LimiteDeError } from '../../components/ui/LimiteDeError';
 import type { Mensaje } from './types';
 import { catalogoA2ui } from './catalog';
 
@@ -16,5 +17,15 @@ export function SurfaceRenderer({ mensaje }: { mensaje: Extract<Mensaje, { tipo:
     return null;
   }
 
-  return <Componente {...mensaje.props} />;
+  /**
+   * El límite va aquí y no en cada bloque: este es el único punto por el
+   * que pasan TODOS los bloques del catálogo, así que ninguno se puede
+   * olvidar de protegerse. Los `props` llegan como JSON sin validar (ver
+   * LimiteDeError), y una tarjeta mal formada no debe llevarse el chat.
+   */
+  return (
+    <LimiteDeError nombre={mensaje.nombre}>
+      <Componente {...mensaje.props} />
+    </LimiteDeError>
+  );
 }

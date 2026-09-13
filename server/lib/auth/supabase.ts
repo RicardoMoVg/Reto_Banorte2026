@@ -49,8 +49,59 @@ export async function getUsuarioDeRequest(req: Request): Promise<UsuarioAutentic
  *   if (auth instanceof Response) return auth;
  *   const { id: userId } = auth;
  */
+/**
+ * Usuario que se asume cuando la peticion llega SIN token.
+ *
+ * Apagado por omision: si la variable no esta en el .env, todo endpoint
+ * protegido sigue respondiendo 401 igual que antes. Existe para que las
+ * pantallas tradicionales (Movimientos, Inicio) puedan leer datos reales
+ * mientras el login de verdad no emite tokens -- sin esto la unica salida
+ * era dejarlas con constantes escritas a mano, que es peor: se ven bonitas
+ * y mienten.
+ *
+ * ⚠️ QUITAR cuando el login emita tokens. Con esto puesto, cualquiera que
+ * alcance el servidor lee y escribe como ese usuario.
+ */
+const USUARIO_SIN_TOKEN = process.env.AUTH_USUARIO_SIN_TOKEN;
+let yaAvisamos = false;
+
 export async function requireUsuario(req: Request): Promise<UsuarioAutenticado | Response> {
-  const usuario = await getUsuarioDeRequest(req);
+  let usuario: UsuarioAutenticado | null;
+
+  try {
+    usuario = await getUsuarioDeRequest(req);
+  } catch (error) {
+    /**
+     * `getSupabaseClient()` truena si faltan SUPABASE_URL o
+     * SUPABASE_ANON_KEY. Sin este catch, CUALQUIER endpoint autenticado
+     * respondia 500 con un stack trace y sin pista de que la causa era el
+     * .env -- costaba un rato darse cuenta, y le pasa igual a los 30
+     * endpoints. 500 sigue siendo el codigo correcto (es falla del
+     * servidor, no del cliente), pero ahora el mensaje dice que revisar.
+     */
+    console.error('[auth] no se pudo verificar el token:', error);
+    return jsonResponse(
+      {
+        error:
+          'Auth no esta configurado en el servidor. Falta SUPABASE_URL o ' +
+          'SUPABASE_ANON_KEY en server/.env (ver server/.env.example).',
+      },
+      { status: 500 },
+    );
+  }
+
+  if (!usuario && USUARIO_SIN_TOKEN) {
+    if (!yaAvisamos) {
+      console.warn(
+        `[auth] AUTH_USUARIO_SIN_TOKEN activo: las peticiones sin token se ` +
+          `atienden como "${USUARIO_SIN_TOKEN}". Quitar esta variable cuando el ` +
+          `login emita tokens.`,
+      );
+      yaAvisamos = true;
+    }
+    return { id: USUARIO_SIN_TOKEN, email: null };
+  }
+
   if (!usuario) {
     return jsonResponse({ error: 'No autenticado.' }, { status: 401 });
   }

@@ -1,4 +1,8 @@
-# Mosaico — Reto Banorte 2026
+# Banortech — Reto Banorte 2026
+
+> **Nombres:** **Banortech** es la aplicación; **Mosaico** es el agente de IA
+> que vive dentro de ella. El login dice Banortech, la ventana de conversación
+> dice Mosaico. No son sinónimos ni el rebranding de uno al otro.
 
 Asistente financiero con **A2UI (Agent-to-UI)**: el agente no manda texto para
 que un humano lo lea ni JSX para que React lo renderice del lado del
@@ -151,15 +155,22 @@ mcp-server/                     # Servidor MCP (paquete Node separado) -> Postgr
 └── package.json                  # Dependencias propias (@modelcontextprotocol/sdk, pg)
 
 client/                          # App Expo/React Native — Android, iOS, y web
-├── App.tsx                       # pantalla única (por ahora): input + lista de mensajes
-├── components/                   # bloques nativos (View/StyleSheet, sin Tailwind/framer-motion)
+├── app/                          # rutas (expo-router, file-based)
+│   ├── _layout.tsx               # layout raíz: providers (incluido el del agente)
+│   └── (tabs)/                   # las tres ventanas: Inicio, Mosaico (chat), Perfil
+├── components/                   # bloques A2UI nativos (View/StyleSheet, sin Tailwind/framer-motion)
+│   └── ui/                       # primitivas de la app (Pantalla, Tarjeta, Boton...) — NO son bloques
+├── lib/
+│   ├── a2ui/                     # mini-SDK: stream NDJSON, catálogo, renderer
+│   └── ui/theme.ts               # tokens de diseño (color, espacio, radio, tipografía)
 ├── scripts/emulator.js           # `npm run emulator -- <avd>` — levanta el emulador sin Android Studio
 └── package.json / app.json / tsconfig.json
 ```
 
 ## Cómo fluye una pregunta
 
-1. `client/App.tsx` manda `POST /api/agent` con el mensaje del usuario.
+1. `client/` manda `POST /api/agent` con el mensaje del usuario (el stream
+   lo maneja `lib/a2ui/useAgentStream.ts`).
 2. `server/app/api/agent/route.ts` llama `streamText({ model, system, tools })`.
 3. El modelo decide: responder en texto, o invocar una tool de
    `lib/ai/a2ui-tools.ts` (ej. `mostrarProgresoMeta`).
@@ -182,8 +193,9 @@ client/                          # App Expo/React Native — Android, iOS, y web
 1. Backend: Zod schema en `lib/ai/a2ui-schemas.ts` + tool en
    `lib/ai/a2ui-tools.ts` (llamando a una función de `lib/mcp/mcp-client.ts`,
    agregando una nueva si hace falta un dato distinto).
-2. Cliente: componente nativo nuevo en `client/components/` + el `case`/`if`
-   correspondiente donde `client/App.tsx` interpreta el evento `surface`.
+2. Cliente: componente nativo nuevo en `client/components/` + registrarlo en
+   `client/lib/a2ui/catalog.ts` (una línea; el string debe ser idéntico al
+   `tipo` que regresa la tool).
 
 ## Historial: qué se retiró
 

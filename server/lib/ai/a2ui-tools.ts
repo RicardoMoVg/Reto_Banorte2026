@@ -1,5 +1,13 @@
 import { tool } from 'ai';
 import {
+  getTransferenciasRecientes,
+  getSolicitudesCredito,
+  getPortafolioUsuario,
+  getHabitosFinancieros,
+  getAportacionesProgramadas,
+  simularPlanPago,
+  getPolizasSeguro,
+  getPlanesPago,
   getMetasUsuario,
   getSaldoUsuario,
   getTransaccionesRecientes,
@@ -39,6 +47,13 @@ import {
   schemaSaldo,
   schemaTransacciones,
   schemaComparativoGastos,
+  schemaTarjetaAccion,
+  schemaGrafica,
+  schemaListado,
+  schemaAcomodarTablero,
+  schemaAccesoRapido,
+  schemaPropuestaAhorro,
+  schemaConfirmarAccion,
   schemaCrearMeta,
   schemaAportarAMeta,
   schemaArchivarMeta,
@@ -69,22 +84,335 @@ import {
 } from './a2ui-schemas';
 
 /**
+ * Tope de transacciones por llamada. Lo impone el schema Zod de
+ * `get_transacciones` en mcp-server/: pedir mas hace que el MCP rechace la
+ * llamada entera. Con mocks no se notaba porque los mocks no validan.
+ */
+const MAX_TRANSACCIONES = 50;
+
+const formatoMXN = new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+  maximumFractionDigits: 0,
+});
+
+/**
+ * Renglones del calendario de un plan. Se muestran hasta 6 periodos: con
+ * plazos largos se reparten parejo en vez de listar 24 meses, que no cabe
+ * en una tarjeta de chat.
+ */
+function calendarioDe(actual: number, aportacion: number, objetivo: number, periodos: number) {
+  const MAXIMO = 6;
+  const indices =
+    periodos <= MAXIMO
+      ? Array.from({ length: periodos }, (_, i) => i + 1)
+      : Array.from({ length: MAXIMO }, (_, i) => Math.round(((i + 1) * periodos) / MAXIMO));
+
+  return Array.from(new Set(indices)).map((n) => ({
+    periodo: `Mes ${n}`,
+    // El tope evita mostrar más que la meta: la aportación se redondea
+    // hacia arriba, así que el último periodo se pasaría por unos pesos.
+    acumulado: Math.min(objetivo, Math.round(actual + aportacion * n)),
+  }));
+}
+
+/**
+ * Tabla de datos referenciables por `idDato` para la tool genérica
+ * `confirmarAccion` (constitution.md 4.4): el modelo elige QUÉ mostrar por
+ * referencia, y el valor lo inyecta este código. Una referencia que no
+ * exista se descarta — nunca se rellena con un número inventado.
+ */
+async function datosReferenciables(userId: string): Promise<Record<string, number>> {
+  const [saldo, metas] = await Promise.all([getSaldoUsuario(userId), getMetasUsuario(userId)]);
+
+  const tabla: Record<string, number> = { saldo };
+
+  metas.forEach((m, i) => {
+    const faltante = Math.max(0, m.montoObjetivo - m.montoActual);
+    tabla[`meta:${m.id}.actual`] = m.montoActual;
+    tabla[`meta:${m.id}.objetivo`] = m.montoObjetivo;
+    tabla[`meta:${m.id}.faltante`] = faltante;
+
+    // Alias sin id para la meta de menor avance: getMetasUsuario ya las
+    // regresa ordenadas por porcentaje ascendente.
+    if (i === 0) {
+      tabla['meta.actual'] = m.montoActual;
+      tabla['meta.objetivo'] = m.montoObjetivo;
+      tabla['meta.faltante'] = faltante;
+    }
+  });
+
+  return tabla;
+}
+
+/** Como llamar a cada dominio cuando la lista sale vacia. */
+const ETIQUETA_VACIO: Record<string, string> = {
+  contactos: 'contactos de pago guardados',
+  transferencias: 'transferencias registradas',
+  tarjetas: 'tarjetas de credito',
+  portafolio: 'inversiones',
+  polizas: 'seguros contratados',
+  solicitudes: 'solicitudes de credito',
+  aportaciones: 'aportaciones programadas',
+  habitos: 'habitos registrados',
+};
+
+/**
+ * Para comparar lo que escribio el usuario contra el dato real: sin
+ * acentos, sin mayusculas. "telefono" tiene que encontrar "Teléfono".
+ */
+function normalizar(texto: string) {
+  return texto
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim();
+}
+
+/**
+ * Un widget del tablero de Inicio, tal como lo reporta el cliente en cada
+ * request (ver `client/lib/a2ui/TableroProvider.tsx` -> `resumen()`).
+ *
+ * Solo trae lo necesario para poder referenciarlo: id, que bloque es, con
+ * que titulo se ve y donde esta hoy. NUNCA sus datos -- el tablero se
+ * acomoda sin que el modelo vea un solo monto.
+ */
+/**
+ * Encuentra el widget al que se refiere el modelo: por numero de posicion,
+ * por id, o por titulo. Devuelve undefined si no es ninguno de los tres --
+ * nunca "el mas parecido", que seria mover un widget al azar.
+ */
+function resolverWidget(tablero: WidgetTablero[], referencia: string) {
+  const limpia = referencia.trim();
+
+  const porId = tablero.find((w) => w.id === limpia);
+  if (porId) return porId;
+
+  // "2", pero tambien "2." o "#2": el modelo a veces adorna el numero.
+  const numero = Number(limpia.replace(/[^0-9]/g, ''));
+  if (limpia.replace(/[^0-9]/g, '') !== '' && Number.isInteger(numero)) {
+    const porPosicion = tablero.find((w) => w.posicion === numero);
+    if (porPosicion) return porPosicion;
+  }
+
+  const aguja = normalizar(limpia);
+  if (aguja === '') return undefined;
+
+  return tablero.find(
+    (w) => normalizar(w.titulo).includes(aguja) || normalizar(w.nombre) === aguja,
+  );
+}
+
+/**
+ * Como se lee un ajuste de tablero en la tarjeta de confirmacion. Lo
+ * redacta el servidor y no el modelo para que diga exactamente lo que se
+ * aplico, no lo que el modelo creyo haber pedido.
+ */
+function descripcionDelCambio(
+  mover?: 'arriba' | 'abajo' | 'inicio' | 'final',
+  ancho?: 'completo' | 'medio',
+  lado?: 'izquierda' | 'derecha',
+) {
+  const partes: string[] = [];
+
+  if (mover === 'arriba') partes.push('subio una posicion');
+  if (mover === 'abajo') partes.push('bajo una posicion');
+  if (mover === 'inicio') partes.push('se fue hasta arriba');
+  if (mover === 'final') partes.push('se fue hasta abajo');
+
+  if (ancho === 'medio') {
+    partes.push(lado === 'derecha' ? 'a media fila, a la derecha' : 'a media fila, a la izquierda');
+  } else if (ancho === 'completo') {
+    partes.push('a fila completa');
+  } else if (lado) {
+    partes.push(lado === 'derecha' ? 'a la derecha' : 'a la izquierda');
+  }
+
+  return partes.length > 0 ? partes.join(' y ') : 'sin cambios';
+}
+
+interface RenglonListado {
+  principal: string;
+  secundario?: string;
+  valor?: string;
+  estatus?: string;
+}
+
+export interface WidgetTablero {
+  id: string;
+  nombre: string;
+  titulo: string;
+  posicion: number;
+  ancho: 'completo' | 'medio';
+  lado: 'izquierda' | 'derecha';
+}
+
+/**
  * Catálogo de tools del A2UI-lite (API JSON, /app/api/agent/route.ts).
  *
  * Cada tool usa la API plana de "ai" y su `execute` regresa JSON, nunca
  * JSX — el cliente (client/) decide cómo pintarlo con su propio catálogo
  * de componentes nativos. Llama al MCP real: el modelo nunca inventa
  * datos, solo elige qué mostrar y redacta el mensaje de contexto.
+ *
+ * `tablero` es lo que el usuario tiene fijado en Inicio AHORA MISMO. Llega
+ * en cada request porque el servidor es stateless (constitution.md 3.1) y
+ * el tablero vive en el cliente; sirve para que `acomodarTablero` valide
+ * contra widgets que existen de verdad en vez de creerle un id al modelo.
  */
-export function buildA2uiTools(userId: string) {
+export function buildA2uiTools(userId: string, tablero: WidgetTablero[] = []) {
+    /**
+     * Traduce cada dominio del MCP a la forma comun de `ListaDatos`
+     * (principal / secundario / valor / estatus). Vive dentro de
+     * buildA2uiTools porque necesita el `userId` del turno.
+     *
+     * Las cifras se formatean AQUI, no en el componente: el bloque solo
+     * pinta strings (constitution.md 4.2).
+     */
+    async function renglonesDe(fuente: string): Promise<RenglonListado[]> {
+      if (fuente === 'contactos') {
+        const contactos = await getContactosPago(userId, {});
+        return contactos.map((c) => ({
+          principal: c.nombre,
+          // La CLABE se muestra enmascarada: no hace falta verla completa
+          // para reconocer a quien le transfieres, y va a pantalla.
+          secundario: c.clabe ? `CLABE ****${c.clabe.slice(-4)}` : 'Sin CLABE registrada',
+          estatus: c.activo ? undefined : 'inactivo',
+        }));
+      }
+
+      if (fuente === 'transferencias') {
+        const transferencias = await getTransferenciasRecientes(userId, {});
+        return transferencias.map((t) => ({
+          principal: t.contacto ?? (t.tipo === 'recibida' ? 'Cobro recibido' : 'Transferencia'),
+          secundario: t.concepto ?? new Date(t.fecha).toLocaleDateString('es-MX'),
+          valor: `${t.tipo === 'recibida' ? '+' : '-'}${formatoMXN.format(t.monto)}`,
+          estatus: t.estatus,
+        }));
+      }
+
+      if (fuente === 'tarjetas') {
+        const tarjetas = await getTarjetasCredito(userId);
+        return tarjetas.map((t) => ({
+          principal: t.alias,
+          secundario: `Limite ${formatoMXN.format(t.limiteCredito)} - tasa ${t.tasaAnual}%`,
+          valor: formatoMXN.format(t.saldoActual),
+        }));
+      }
+
+      if (fuente === 'portafolio') {
+        const posiciones = await getPortafolioUsuario(userId);
+        return posiciones.map((p) => ({
+          principal: p.nombre,
+          secundario: `${p.cantidad} titulos - riesgo ${p.riesgo}`,
+          valor: formatoMXN.format(p.valorInvertido),
+          estatus: p.activa ? undefined : 'cerrada',
+        }));
+      }
+
+      if (fuente === 'polizas') {
+        const polizas = await getPolizasSeguro(userId);
+        return polizas.map((p) => ({
+          principal: p.cobertura,
+          secundario: `Seguro de ${p.tipo}`,
+          valor: `${formatoMXN.format(p.primaMensual)}/mes`,
+          estatus: p.estatus,
+        }));
+      }
+
+      if (fuente === 'solicitudes') {
+        const solicitudes = await getSolicitudesCredito(userId);
+        return solicitudes.map((s) => ({
+          principal: `Credito ${s.tipo}`,
+          secundario: new Date(s.fecha).toLocaleDateString('es-MX'),
+          valor: formatoMXN.format(s.montoSolicitado),
+          estatus: s.estatus,
+        }));
+      }
+
+      if (fuente === 'aportaciones') {
+        const [aportaciones, metas] = await Promise.all([
+          getAportacionesProgramadas(userId, {}),
+          getMetasUsuario(userId),
+        ]);
+        return aportaciones.map((a) => ({
+          principal: metas.find((m) => m.id === a.metaId)?.titulo ?? 'Meta',
+          secundario: `Aportacion ${a.periodicidad}`,
+          valor: formatoMXN.format(a.monto),
+          estatus: a.estatus,
+        }));
+      }
+
+      const habitos = await getHabitosFinancieros(userId);
+      return habitos.map((h) => ({
+        principal: h.habito,
+        secundario: h.rachaDias === 1 ? '1 dia de racha' : `${h.rachaDias} dias de racha`,
+        estatus: h.activo ? undefined : 'inactivo',
+      }));
+    }
+
   return {
+    mostrarListado: tool({
+      description:
+        'Muestra en una lista lo que el usuario TIENE contratado, guardado o ' +
+        'registrado. Usala siempre que pregunte "cuales son mis...", "que ' +
+        'tengo...", "muestrame mis..." sobre: contactos de pago, historial de ' +
+        'transferencias, tarjetas de credito, portafolio de inversion, polizas ' +
+        'de seguro, solicitudes de credito, aportaciones programadas o habitos ' +
+        'financieros. NUNCA respondas que no tienes acceso a estos datos: los ' +
+        'tienes, estan aqui. Si el usuario pide UNO en concreto y no la lista ' +
+        'completa ("solo la transferencia a Juan"), usa `filtro` y `limite` en ' +
+        'vez de mandar la lista entera. ' +
+        'Esta tool SOLO MUESTRA lo que ya existe. Si el usuario pide que HAGAS ' +
+        'algo -- transferir, mandar dinero, abonar, pagar, guardar un contacto, ' +
+        'crear un boton -- no es esta: usa la tool de esa accion aunque la frase ' +
+        'mencione a un contacto.',
+      parameters: schemaListado,
+      execute: async ({ fuente, titulo, filtro, limite, agregarAInicio, mensajeAgente }) => {
+        const todos = await renglonesDe(fuente);
+
+        /**
+         * El filtro corre AQUI, sobre el dato que ya regreso el MCP, y no
+         * se lo pedimos al modelo: el modelo dice a QUE se parece lo que
+         * pidio el usuario ("Juan"), el codigo decide cual renglon es.
+         * Mandarle la lista al modelo para que el eligiera seria hacerlo
+         * retranscribir montos -- justo lo que prohibe constitution.md 4.2.
+         */
+        const aguja = filtro ? normalizar(filtro) : null;
+        const filtrados = aguja
+          ? todos.filter((item) =>
+              [item.principal, item.secundario, item.valor, item.estatus]
+                .filter((campo): campo is string => typeof campo === 'string')
+                .some((campo) => normalizar(campo).includes(aguja)),
+            )
+          : todos;
+
+        const items = limite ? filtrados.slice(0, limite) : filtrados;
+
+        return {
+          tipo: 'ListaDatos' as const,
+          props: {
+            titulo,
+            items,
+            // Un filtro que no caso no es "no tienes nada": el usuario si
+            // tiene transferencias, solo ninguna que se llame asi.
+            vacio: filtro
+              ? `No encontre ${ETIQUETA_VACIO[fuente]} que coincidan con "${filtro}".`
+              : `Todavia no tienes ${ETIQUETA_VACIO[fuente]}.`,
+            mensajeAgente,
+            agregarAInicio,
+          },
+        };
+      },
+    }),
+
     mostrarProgresoMeta: tool({
       description:
         'Muestra visualmente el progreso de una meta de ahorro o hábito ' +
         'financiero del usuario. Úsala siempre que pregunte por su avance, ' +
         'en vez de describir el porcentaje en texto.',
       parameters: schemaProgresoMeta,
-      execute: async ({ metaId, mensajeAgente }) => {
+      execute: async ({ metaId, agregarAInicio, mensajeAgente }) => {
         const metas = await getMetasUsuario(userId);
         // Si el modelo manda un metaId que no existe (a veces inventa un id
         // "plausible" en vez de dejarlo vacío), no truena: cae a la meta con
@@ -101,6 +429,7 @@ export function buildA2uiTools(userId: string) {
             titulo: meta.titulo,
             porcentaje: meta.porcentaje,
             mensajeAgente,
+            agregarAInicio,
           },
         };
       },
@@ -111,7 +440,7 @@ export function buildA2uiTools(userId: string) {
         'Muestra un monto financiero destacado: saldo disponible, total ' +
         'gastado en el mes, dinero ahorrado, etc.',
       parameters: schemaSaldo,
-      execute: async ({ titulo, mensajeAgente }) => {
+      execute: async ({ titulo, agregarAInicio, mensajeAgente }) => {
         const saldo = await getSaldoUsuario(userId);
 
         return {
@@ -120,6 +449,7 @@ export function buildA2uiTools(userId: string) {
             titulo,
             monto: saldo,
             mensajeAgente,
+            agregarAInicio,
           },
         };
       },
@@ -128,24 +458,48 @@ export function buildA2uiTools(userId: string) {
     mostrarTransacciones: tool({
       description:
         'Muestra una lista de movimientos recientes del usuario. Úsala ' +
-        'cuando pregunte en qué gastó, sus últimos cargos o sus ingresos.',
+        'cuando pregunte en qué gastó, sus últimos cargos o sus ingresos. ' +
+        'Si pide UN movimiento en concreto ("solo el cargo de Netflix"), manda ' +
+        '`busqueda` con ese texto y `limite: 1`.',
       parameters: schemaTransacciones,
-      execute: async ({ titulo, limite, categoria, mensajeAgente }) => {
+      execute: async ({ titulo, limite, categoria, busqueda, agregarAInicio, mensajeAgente }) => {
+        /**
+         * Con `busqueda` se traen MAS movimientos de los que se van a
+         * mostrar y se filtra aqui: si se pidiera el limite crudo al MCP,
+         * buscar "Spotify" entre los ultimos 3 movimientos no lo
+         * encontraria aunque exista mas atras.
+         */
         const transacciones = await getTransaccionesRecientes(userId, {
-          limite: limite ?? 10,
+          limite: busqueda ? MAX_TRANSACCIONES : (limite ?? 10),
           categoria,
         });
+
+        const aguja = busqueda ? normalizar(busqueda) : null;
+        const coincidentes = aguja
+          ? transacciones.filter((t) =>
+              normalizar(`${t.descripcion} ${t.categoria ?? ''}`).includes(aguja),
+            )
+          : transacciones;
+
+        const visibles = busqueda ? coincidentes.slice(0, limite ?? 10) : coincidentes;
+
+        if (busqueda && visibles.length === 0) {
+          return {
+            error: `No hay ningun movimiento reciente que mencione "${busqueda}".`,
+          };
+        }
 
         return {
           tipo: 'ListaTransacciones' as const,
           props: {
             titulo,
-            transacciones: transacciones.map((t) => ({
+            transacciones: visibles.map((t) => ({
               descripcion: t.descripcion,
               monto: t.monto,
               categoria: t.categoria,
             })),
             mensajeAgente,
+            agregarAInicio,
           },
         };
       },
@@ -157,11 +511,11 @@ export function buildA2uiTools(userId: string) {
         'por categoría. Úsala cuando pregunte en qué se le va el dinero o ' +
         'pida comparar categorías.',
       parameters: schemaComparativoGastos,
-      execute: async ({ titulo, mensajeAgente }) => {
+      execute: async ({ titulo, agregarAInicio, mensajeAgente }) => {
         // No existe una tool de MCP para "gasto por categoría" — se
         // agrega aquí en JS a partir de las transacciones, en vez de
         // agregar una tabla/query nueva en mcp-server/ (ver plan, Paso 3c).
-        const transacciones = await getTransaccionesRecientes(userId, { limite: 100 });
+        const transacciones = await getTransaccionesRecientes(userId, { limite: MAX_TRANSACCIONES });
 
         const porCategoria = new Map<string, number>();
         for (const t of transacciones) {
@@ -177,7 +531,466 @@ export function buildA2uiTools(userId: string) {
 
         return {
           tipo: 'ComparativoGastos' as const,
-          props: { titulo, categorias, mensajeAgente },
+          props: { titulo, categorias, mensajeAgente, agregarAInicio },
+        };
+      },
+    }),
+
+    acomodarTablero: tool({
+      description:
+        'Cambia el ACOMODO de los widgets que el usuario ya tiene fijados en su Inicio: ' +
+        'subir o bajar uno, mandarlo hasta arriba o hasta abajo, hacerlo mas chico (medio ' +
+        'ancho) y ponerlo a la izquierda o a la derecha. Usala cuando diga cosas como ' +
+        '"sube mis gastos", "pon el saldo hasta arriba", "haz la grafica mas chica a la ' +
+        'derecha", "acomoda mi tablero". NO agrega ni quita widgets: solo mueve los que ya ' +
+        'estan. La lista de widgets con sus ids viene en el contexto de este turno; si esta ' +
+        'vacia, el usuario no ha fijado nada todavia.',
+      parameters: schemaAcomodarTablero,
+      execute: async ({ ajustes, mensajeAgente }) => {
+        if (tablero.length === 0) {
+          return {
+            error:
+              'El tablero de Inicio esta vacio: no hay nada que acomodar. Dile al usuario que ' +
+              'primero agregue algun bloque a su Inicio (puede pedirte "agrega esto a mi inicio").',
+          };
+        }
+
+        /**
+         * Cada referencia se resuelve contra el tablero real. Si el modelo
+         * mandó una que no existe, no se aplica NADA: aplicar la mitad de
+         * un reacomodo deja la pantalla peor que como estaba.
+         *
+         * Se acepta la posicion y el titulo ademas del id porque los ids
+         * son largos y parecidos entre si (salen del id del mensaje del
+         * chat): pidiendole al modelo que copie uno, se equivocaba de
+         * widget -- movia los gastos cuando el usuario habia dicho "saldo".
+         */
+        const resueltos = ajustes.map((a) => ({
+          ajuste: a,
+          widget: resolverWidget(tablero, a.id),
+        }));
+
+        const desconocido = resueltos.find((r) => !r.widget);
+        if (desconocido) {
+          return {
+            error:
+              `En el tablero no hay ningun widget que sea "${desconocido.ajuste.id}". ` +
+              `Los que hay son: ${tablero.map((w) => `${w.posicion}. ${w.titulo}`).join(' | ')}. ` +
+              'Vuelve a intentarlo usando el numero de posicion.',
+          };
+        }
+
+        const aplicados = resueltos.map(({ ajuste, widget }) => ({
+          // Siempre el id REAL, aunque el modelo haya referenciado por
+          // posicion o titulo: es lo unico que el cliente sabe buscar.
+          id: widget!.id,
+          titulo: widget!.titulo,
+          mover: ajuste.mover,
+          // Pedir "a la derecha" implica hacerlo chico: un widget de ancho
+          // completo ocupa la fila entera y no tiene lado posible.
+          ancho: ajuste.ancho ?? (ajuste.lado ? ('medio' as const) : undefined),
+          lado: ajuste.lado,
+        }));
+
+        return {
+          tipo: 'AjusteTablero' as const,
+          props: {
+            // Lo genera el codigo, como `idAccion`: es la llave con la que
+            // el cliente recuerda que este ajuste ya se aplico y no lo
+            // vuelve a aplicar al repintar el historial.
+            idAjuste: `tablero-${Date.now()}`,
+            ajustes: aplicados,
+            resumen: aplicados.map((a) => ({
+              titulo: a.titulo,
+              cambio: descripcionDelCambio(a.mover, a.ancho, a.lado),
+            })),
+            mensajeAgente,
+          },
+        };
+      },
+    }),
+
+    crearAccesoRapido: tool({
+      description:
+        'ESTA es la tool cuando el usuario dice las palabras "boton", "acceso rapido", ' +
+        '"atajo" o "shortcut". Crea un boton de un toque para su pantalla de Inicio. ' +
+        'Ejemplos que le tocan a ESTA tool y a ninguna otra: "ponme un boton para ' +
+        'transferirle a mi mama" (accion "transferencia", nombreContacto "mama"), "quiero ' +
+        'un acceso rapido para mandarle 300 a Pedro" (accion "transferencia", monto 300), ' +
+        '"hazme un atajo para ver mi saldo" (accion "consulta"). ' +
+        'OJO: pedir un BOTON para transferir NO es pedir una transferencia ni guardar un ' +
+        'contacto -- si la frase trae "boton"/"acceso rapido"/"atajo", NO uses ' +
+        'proponerTransferencia, ni crearContactoPago, ni mostrarListado. El contacto se ' +
+        'valida aqui adentro. El boton no mueve dinero al tocarse: prepara la peticion y el ' +
+        'usuario la confirma en la tarjeta de siempre.',
+      parameters: schemaAccesoRapido,
+      execute: async ({
+        accion,
+        nombreContacto,
+        monto,
+        concepto,
+        pregunta,
+        titulo,
+        icono,
+        mensajeAgente,
+      }) => {
+        if (accion === 'consulta') {
+          if (!pregunta) {
+            return {
+              error: 'Un acceso rapido de consulta necesita `pregunta`. Vuelve a llamarla con ella.',
+            };
+          }
+
+          return {
+            tipo: 'AccesoRapido' as const,
+            props: {
+              titulo,
+              subtitulo: 'Se lo pregunta a Mosaico por ti',
+              icono: icono ?? 'rayo',
+              peticion: pregunta,
+              mensajeAgente,
+              // Un atajo solo sirve fijado: por eso lo marca el codigo y no
+              // el modelo. El usuario igual lo confirma con el boton de
+              // "Aceptar componente" (client/components/chat/PropuestaDeAnclaje).
+              agregarAInicio: true,
+            },
+          };
+        }
+
+        if (!nombreContacto) {
+          return { error: 'Un acceso rapido de transferencia necesita `nombreContacto`.' };
+        }
+
+        const contactos = await getContactosPago(userId, { nombre: nombreContacto });
+
+        if (contactos.length === 0) {
+          return {
+            error:
+              `No hay ningun contacto guardado que coincida con "${nombreContacto}", asi que el ` +
+              'boton no tendria a quien mandarle. Si el usuario te dio una CLABE, guarda primero ' +
+              'el contacto con `crearContactoPago` y vuelve a crear el acceso rapido.',
+          };
+        }
+        if (contactos.length > 1) {
+          return {
+            error: `Hay mas de un contacto que coincide con "${nombreContacto}": ${contactos
+              .map((c) => c.nombre)
+              .join(', ')}. Pide que aclare para cual es el boton.`,
+          };
+        }
+
+        const contacto = contactos[0];
+
+        /**
+         * La frase que el boton le manda al agente al tocarse. La arma el
+         * CODIGO con el monto que ya valido el schema, no el modelo: es el
+         * mismo motivo por el que `proponerTransferencia` no deja que el
+         * modelo reescriba la cifra en un segundo turno.
+         */
+        const peticion = monto
+          ? `Transfiere ${formatoMXN.format(monto)} a ${contacto.nombre}${concepto ? ` por ${concepto}` : ''}.`
+          : `Quiero transferirle a ${contacto.nombre}.`;
+
+        return {
+          tipo: 'AccesoRapido' as const,
+          props: {
+            titulo,
+            subtitulo: monto
+              ? `${formatoMXN.format(monto)} a ${contacto.nombre}`
+              : `Para ${contacto.nombre}`,
+            icono: icono ?? 'transferir',
+            peticion,
+            mensajeAgente,
+            agregarAInicio: true,
+          },
+        };
+      },
+    }),
+
+    /* ---------------------------------------------------------------- *
+     * Bloques de ACCIÓN. El usuario los acepta o rechaza y el cliente le
+     * avisa al agente en el siguiente turno ("Acepto <etiqueta>."). Ver
+     * client/components/chat/tipos.ts.
+     * ---------------------------------------------------------------- */
+
+    mostrarGrafica: tool({
+      description:
+        'Muestra los gastos del usuario por categoria en la FORMA de grafico ' +
+        'que elijas: pastel, dona, barras verticales, barras horizontales o ' +
+        'linea. Usala cuando el usuario pida explicitamente un tipo de ' +
+        'grafica ("una grafica de pie", "en barras") o cuando una forma ' +
+        'distinta a las barras explique mejor el dato. Respeta SIEMPRE el ' +
+        'tipo que pida el usuario.',
+      parameters: schemaGrafica,
+      execute: async ({ componente, titulo, agregarAInicio, mensajeAgente }) => {
+        const transacciones = await getTransaccionesRecientes(userId, {
+          limite: MAX_TRANSACCIONES,
+        });
+
+        const porCategoria = new Map<string, number>();
+        for (const t of transacciones) {
+          if (t.monto >= 0) continue; // solo gastos, no ingresos
+          const categoria = t.categoria || 'otros';
+          porCategoria.set(categoria, (porCategoria.get(categoria) ?? 0) + Math.abs(t.monto));
+        }
+
+        const categorias = Array.from(porCategoria.entries())
+          .map(([nombre, monto]) => ({ nombre, monto }))
+          .sort((a, b) => b.monto - a.monto)
+          .slice(0, 6);
+
+        if (categorias.length === 0) {
+          return { error: 'No hay gastos registrados para graficar.' };
+        }
+
+        // `componente` es el nombre en el catalogo del cliente: el modelo
+        // eligio la forma del grafico, el codigo puso los datos.
+        return {
+          tipo: componente,
+          props: { titulo, categorias, mensajeAgente, agregarAInicio },
+        };
+      },
+    }),
+
+    armarTarjetaAccion: tool({
+      description:
+        'Arma una tarjeta de accion a la medida, eligiendo de que piezas se ' +
+        'compone (una cifra destacada, un resumen, una tabla, opciones a ' +
+        'elegir, una nota). Es la tool preferida siempre que el usuario deba ' +
+        'ESCOGER entre alternativas. Casos que cubre hoy, con el valor de ' +
+        '`fuente` que le toca a la pieza "opciones": ' +
+        'reestructurar el saldo de la tarjeta a plazos -> "planes-pago"; ' +
+        'invertir o comparar rendimientos -> "instrumentos"; ' +
+        'elegir una meta de ahorro -> "metas"; ' +
+        'contratar o revisar un seguro -> "polizas"; ' +
+        'fijar un limite de gasto mensual para una categoria -> ' +
+        '"limites-presupuesto" (manda `parametro` con la categoria, ej. "comida"); ' +
+        'cuanto pagar de la tarjeta o como evitar intereses -> "pagos-tarjeta".',
+      parameters: schemaTarjetaAccion,
+      execute: async ({
+        intencion,
+        titulo,
+        contenido,
+        textoAccion,
+        resultado,
+        etiqueta,
+        mensajeAgente,
+      }) => {
+        const tabla = await datosReferenciables(userId);
+
+        /** Expande una `fuente` a filas reales del MCP. */
+        async function filasDe(fuente: string, parametro?: string) {
+          if (fuente === 'polizas') {
+            const polizas = await getPolizasSeguro(userId);
+            return polizas.map((p) => ({
+              id: p.id,
+              tituloOpcion: p.cobertura,
+              subtitulo: `Seguro de ${p.tipo} · ${p.estatus}`,
+              valorDestacado: `${formatoMXN.format(p.primaMensual)}/mes`,
+            }));
+          }
+
+          if (fuente === 'limites-presupuesto') {
+            // El promedio sale del historial real; los porcentajes son
+            // política de producto, no un dato del banco -- por eso el
+            // subtítulo los declara en vez de presentarlos como cifra dada.
+            const categoria = (parametro ?? '').trim().toLowerCase();
+            if (!categoria) return [];
+
+            const transacciones = await getTransaccionesRecientes(userId, {
+              limite: MAX_TRANSACCIONES,
+              categoria,
+            });
+            const gastos = transacciones.filter((t) => t.monto < 0);
+            if (gastos.length === 0) return [];
+
+            const meses = new Set(gastos.map((t) => t.fecha.slice(0, 7))).size || 1;
+            const promedio = gastos.reduce((acc, t) => acc + Math.abs(t.monto), 0) / meses;
+
+            return [
+              { id: 'estricto', factor: 0.8, titulo: 'Estricto', nota: '20% abajo de tu promedio' },
+              { id: 'recomendado', factor: 0.95, titulo: 'Recomendado', nota: '5% abajo de tu promedio' },
+              { id: 'holgado', factor: 1.15, titulo: 'Holgado', nota: 'Margen para imprevistos' },
+            ].map((o) => ({
+              id: o.id,
+              tituloOpcion: o.titulo,
+              subtitulo: o.nota,
+              valorDestacado: `${formatoMXN.format(Math.round(promedio * o.factor))}/mes`,
+            }));
+          }
+
+          if (fuente === 'pagos-tarjeta') {
+            const [tarjeta] = await getTarjetasCredito(userId);
+            if (!tarjeta || tarjeta.saldoActual <= 0) return [];
+
+            // Pagar todo es la única opción sin intereses; el costo de las
+            // demás lo calcula el simulador del MCP con la tasa real de la
+            // tarjeta, no una regla inventada aquí.
+            const diferidos = await Promise.all(
+              [3, 6].map((plazo) => simularPlanPago(tarjeta.saldoActual, plazo, tarjeta.tasaAnual)),
+            );
+
+            return [
+              {
+                id: 'total',
+                tituloOpcion: 'Pagar todo este mes',
+                subtitulo: 'La única opción que no genera intereses',
+                valorDestacado: formatoMXN.format(tarjeta.saldoActual),
+              },
+              ...diferidos.map((d) => ({
+                id: `diferido-${d.plazoMeses}`,
+                tituloOpcion: `Diferir a ${d.plazoMeses} meses`,
+                subtitulo: `Tasa ${d.tasaAnual}% anual`,
+                valorDestacado: `${formatoMXN.format(Math.round(d.pagoMensual))}/mes`,
+                advertencia: `Pagarías ${formatoMXN.format(Math.round(d.totalIntereses))} de intereses.`,
+              })),
+            ];
+          }
+
+          if (fuente === 'planes-pago') {
+            const [tarjeta] = await getTarjetasCredito(userId);
+            if (!tarjeta) return [];
+            const planes = await getPlanesPago(tarjeta.id);
+            return planes.map((p) => ({
+              id: p.id,
+              tituloOpcion: `${p.plazoMeses} meses`,
+              subtitulo: `CAT ${p.cat}%`,
+              valorDestacado: `${formatoMXN.format(p.pagoMensual)}/mes`,
+            }));
+          }
+
+          if (fuente === 'instrumentos') {
+            const instrumentos = await getInstrumentos();
+            return instrumentos.map((i) => ({
+              id: i.id,
+              tituloOpcion: i.nombre,
+              subtitulo: `Riesgo ${i.riesgo}`,
+              valorDestacado: `${i.rendimientoAnualEstimado}% anual`,
+            }));
+          }
+
+          const metas = await getMetasUsuario(userId);
+          return metas.map((m) => ({
+            id: m.id,
+            tituloOpcion: m.titulo,
+            subtitulo: `${m.porcentaje}% de avance`,
+            valorDestacado: formatoMXN.format(m.montoObjetivo - m.montoActual),
+          }));
+        }
+
+        // Cada pieza se reconstruye con datos reales. Una referencia que no
+        // existe se descarta en vez de rellenarse con un número inventado
+        // (constitution.md 4.2) -- por eso el filter(Boolean) del final.
+        const piezas = await Promise.all(
+          contenido.map(async (c) => {
+            if (c.elemento === 'destacado') {
+              const valor = c.idDato ? tabla[c.idDato] : undefined;
+              if (typeof valor !== 'number') return null;
+              return {
+                elemento: 'destacado' as const,
+                etiqueta: c.etiqueta ?? 'Monto',
+                valor: formatoMXN.format(valor),
+              };
+            }
+
+            if (c.elemento === 'resumen') {
+              const filas = (c.campos ?? [])
+                .filter((campo) => typeof tabla[campo.idDato] === 'number')
+                .map((campo) => ({
+                  etiqueta: campo.etiqueta,
+                  valor: formatoMXN.format(tabla[campo.idDato]),
+                }));
+              return filas.length > 0 ? { elemento: 'resumen' as const, filas } : null;
+            }
+
+            if (c.elemento === 'opciones') {
+              const opciones = await filasDe(c.fuente ?? 'metas', c.parametro);
+              return opciones.length > 0 ? { elemento: 'opciones' as const, opciones } : null;
+            }
+
+            if (c.elemento === 'tabla') {
+              const filas = await filasDe(c.fuente ?? 'metas', c.parametro);
+              if (filas.length === 0) return null;
+              return {
+                elemento: 'tabla' as const,
+                columnas: ['Opción', 'Detalle', 'Monto'],
+                renglones: filas.map((f) => ({
+                  celdas: [f.tituloOpcion, f.subtitulo, f.valorDestacado],
+                })),
+              };
+            }
+
+            return c.texto
+              ? { elemento: 'nota' as const, texto: c.texto, tono: c.tono ?? 'info' }
+              : null;
+          }),
+        );
+
+        const definitivas = piezas.filter((p) => p !== null);
+
+        if (definitivas.length === 0) {
+          return {
+            error:
+              'No hay datos para ninguna de las piezas pedidas, así que la tarjeta quedaría vacía.',
+          };
+        }
+
+        return {
+          tipo: 'TarjetaAccion' as const,
+          props: {
+            idAccion: `tarjeta-${Date.now()}`,
+            etiqueta,
+            intencion,
+            titulo,
+            contenido: definitivas,
+            textoAccion,
+            resultado,
+            mensajeAgente,
+          },
+        };
+      },
+    }),
+
+    proponerPlanAhorro: tool({
+      description:
+        'Propone un plan concreto para alcanzar una meta de ahorro: cuánto ' +
+        'apartar al mes y en cuántos meses, con una tabla del avance y un ' +
+        'botón para aceptarlo. Úsala cuando el usuario pida un plan, ' +
+        'pregunte cómo llegar a una meta, o cuánto debería ahorrar.',
+      parameters: schemaPropuestaAhorro,
+      execute: async ({ intencion, metaId, plazoMeses, titulo, etiqueta, mensajeAgente }) => {
+        const metas = await getMetasUsuario(userId);
+        const meta = (metaId && metas.find((m) => m.id === metaId)) || metas[0];
+
+        if (!meta) {
+          return { error: 'El usuario no tiene metas registradas.' };
+        }
+
+        const faltante = meta.montoObjetivo - meta.montoActual;
+        if (faltante <= 0) {
+          return {
+            error: `La meta "${meta.titulo}" ya está cumplida, no hace falta un plan.`,
+          };
+        }
+
+        // La aportación sale de la división, no del modelo.
+        const aportacion = Math.ceil(faltante / plazoMeses);
+
+        return {
+          tipo: 'PropuestaAhorro' as const,
+          props: {
+            idAccion: `plan-${meta.id}-${Date.now()}`,
+            etiqueta,
+            intencion,
+            titulo,
+            meta: meta.titulo,
+            aportacion,
+            periodos: plazoMeses,
+            objetivo: meta.montoObjetivo,
+            actual: meta.montoActual,
+            calendario: calendarioDe(meta.montoActual, aportacion, meta.montoObjetivo, plazoMeses),
+            mensajeAgente,
+          },
         };
       },
     }),
@@ -232,6 +1045,56 @@ export function buildA2uiTools(userId: string) {
         return {
           tipo: 'RastreadorMetas' as const,
           props: { titulo: resultado.titulo, porcentaje: resultado.porcentaje, mensajeAgente },
+        };
+      },
+    }),
+
+    confirmarAccion: tool({
+      description:
+        'Pide confirmación al usuario antes de configurar algo en la app ' +
+        '(activar una alerta, apartar dinero para una meta, cambiar un ' +
+        'límite). Muestra un resumen y los botones de aceptar/rechazar. ' +
+        'Úsala en vez de preguntar "¿quieres que lo haga?" en texto.',
+      parameters: schemaConfirmarAccion,
+      execute: async ({
+        intencion,
+        titulo,
+        campos,
+        textoAceptar,
+        resultado,
+        advertencia,
+        etiqueta,
+        mensajeAgente,
+      }) => {
+        const tabla = await datosReferenciables(userId);
+
+        // Una referencia inexistente se cae de la lista en vez de mostrarse
+        // vacía o con un número inventado (constitution.md 4.2).
+        const resumen = campos
+          .filter((c) => typeof tabla[c.idDato] === 'number')
+          .map((c) => ({ etiqueta: c.etiqueta, valor: formatoMXN.format(tabla[c.idDato]) }));
+
+        if (campos.length > 0 && resumen.length === 0) {
+          return {
+            error:
+              'Ninguna de las referencias pedidas existe para este usuario, ' +
+              'así que no se puede armar el resumen de la acción.',
+          };
+        }
+
+        return {
+          tipo: 'ConfirmarAccion' as const,
+          props: {
+            idAccion: `accion-${Date.now()}`,
+            etiqueta,
+            intencion,
+            titulo,
+            resumen,
+            textoAceptar,
+            resultado,
+            advertencia,
+            mensajeAgente,
+          },
         };
       },
     }),
@@ -521,35 +1384,67 @@ export function buildA2uiTools(userId: string) {
       },
     }),
 
-    crearTransferencia: tool({
+    proponerTransferencia: tool({
       description:
-        'Transfiere dinero del usuario a uno de sus contactos de pago guardados. Úsala cuando pida ' +
-        'transferirle/mandarle dinero a alguien por nombre.',
+        'Prepara una transferencia a un contacto guardado y se la muestra al usuario para que ' +
+        'la confirme. Usala cuando pida transferirle/mandarle dinero a alguien por nombre. ' +
+        'NO mueve dinero: solo propone. El movimiento ocurre cuando el usuario toca el boton ' +
+        'de confirmar en la tarjeta.',
       parameters: schemaCrearTransferencia,
       execute: async ({ nombreContacto, monto, concepto, mensajeAgente }) => {
         const contactos = await getContactosPago(userId, { nombre: nombreContacto });
 
         if (contactos.length === 0) {
-          return { error: `No se encontró ningún contacto guardado que coincida con "${nombreContacto}".` };
+          // El mensaje le dice al modelo QUE HACER, no solo que fallo: es
+          // lo que lee para decidir el siguiente paso. Sin la instruccion
+          // explicita, guardaba el contacto SIN la CLABE que el usuario ya
+          // le habia dado unos turnos antes, y luego proponia con un monto
+          // distinto al pedido.
+          return {
+            error:
+              `No hay ningun contacto guardado que coincida con "${nombreContacto}". ` +
+              'Si el usuario te dio un numero de cuenta o CLABE en esta conversacion, ' +
+              'guarda primero el contacto con `crearContactoPago` INCLUYENDO esa CLABE, ' +
+              'y despues vuelve a proponer la transferencia con el MISMO monto que pidio ' +
+              'al principio. Si no te dio CLABE, pidesela antes de guardar.',
+          };
         }
         if (contactos.length > 1) {
           return {
-            error: `Hay más de un contacto que coincide con "${nombreContacto}": ${contactos
+            error: `Hay mas de un contacto que coincide con "${nombreContacto}": ${contactos
               .map((c) => c.nombre)
-              .join(', ')}. Pide que aclare a cuál.`,
+              .join(', ')}. Pide que aclare a cual.`,
           };
         }
 
-        const resultado = await crearTransferencia(userId, contactos[0].id, monto, concepto);
-        if ('error' in resultado) return { error: resultado.error };
+        const contacto = contactos[0];
+        const resumen = [{ etiqueta: `Para ${contacto.nombre}`, valor: formatoMXN.format(monto) }];
 
         return {
-          tipo: 'Confirmacion' as const,
+          tipo: 'ConfirmarAccion' as const,
           props: {
-            titulo: 'Transferencia realizada',
-            mensaje: `$${monto} a ${contactos[0].nombre}.`,
-            exito: true,
+            idAccion: `transferencia-${contacto.id}-${Date.now()}`,
+            etiqueta: `la transferencia a ${contacto.nombre}`,
+            intencion: 'alerta' as const,
+            titulo: `Transferir a ${contacto.nombre}`,
+            resumen,
+            textoAceptar: 'Confirmar transferencia',
+            resultado: `Transferencia enviada a ${contacto.nombre}.`,
+            advertencia: concepto
+              ? `Concepto: ${concepto}. Una transferencia enviada no se puede deshacer.`
+              : 'Una transferencia enviada no se puede deshacer.',
             mensajeAgente,
+            /**
+             * La receta de ejecucion. El cliente la regresa TAL CUAL al
+             * confirmar y el servidor la corre sin volver a preguntarle al
+             * modelo: si el modelo tuviera que elegir la tool otra vez,
+             * podria equivocarse de contacto o de monto en el segundo
+             * intento. Aqui el monto ya esta fijado y validado.
+             */
+            ejecucion: {
+              tool: 'ejecutarTransferencia',
+              args: { contactoId: contacto.id, monto, concepto },
+            },
           },
         };
       },
