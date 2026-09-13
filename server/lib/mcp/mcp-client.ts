@@ -669,6 +669,57 @@ export async function getSolicitudesCredito(userId: string): Promise<SolicitudCr
   }));
 }
 
+export async function crearSolicitudCredito(
+  userId: string,
+  tipo: 'personal' | 'hipotecario' | 'automotriz' | 'tarjeta',
+  montoSolicitado: number,
+): Promise<SolicitudCredito> {
+  if (USE_MOCK) {
+    const solicitud: SolicitudCredito = {
+      id: `sol-mock-${SOLICITUDES_CREDITO_MOCK.length + 1}`,
+      tipo,
+      montoSolicitado,
+      estatus: 'pendiente',
+      fecha: new Date().toISOString(),
+    };
+    SOLICITUDES_CREDITO_MOCK.push(solicitud);
+    return solicitud;
+  }
+
+  const s = await llamarTool<{ id: string; tipo: string; monto_solicitado: string | number; estatus: string; fecha: string }>(
+    'crear_solicitud_credito',
+    { userId, tipo, montoSolicitado },
+  );
+
+  return { id: s.id, tipo: s.tipo, montoSolicitado: Number(s.monto_solicitado), estatus: s.estatus, fecha: s.fecha };
+}
+
+export async function cancelarSolicitudCredito(
+  solicitudId: string,
+): Promise<SolicitudCredito | { error: string }> {
+  if (USE_MOCK) {
+    const solicitud = SOLICITUDES_CREDITO_MOCK.find((s) => s.id === solicitudId && s.estatus === 'pendiente');
+    if (!solicitud) return { error: 'Solicitud no encontrada o ya no está pendiente.' };
+    solicitud.estatus = 'cancelada';
+    return solicitud;
+  }
+
+  const resultado = await llamarTool<
+    | { error: string }
+    | { id: string; tipo: string; monto_solicitado: string | number; estatus: string; fecha: string }
+  >('cancelar_solicitud_credito', { solicitudId });
+
+  if ('error' in resultado) return resultado;
+
+  return {
+    id: resultado.id,
+    tipo: resultado.tipo,
+    montoSolicitado: Number(resultado.monto_solicitado),
+    estatus: resultado.estatus,
+    fecha: resultado.fecha,
+  };
+}
+
 // ============================================================
 // Pagos
 // ============================================================

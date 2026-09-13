@@ -143,9 +143,14 @@ create table if not exists solicitudes_credito (
   usuario_id text not null references usuarios(id),
   tipo text not null check (tipo in ('personal', 'hipotecario', 'automotriz', 'tarjeta')),
   monto_solicitado numeric not null check (monto_solicitado > 0),
-  estatus text not null default 'pendiente' check (estatus in ('pendiente', 'aprobado', 'rechazado')),
+  estatus text not null default 'pendiente' check (estatus in ('pendiente', 'aprobado', 'rechazado', 'cancelada')),
   fecha timestamptz not null default now()
 );
+
+-- migración idempotente: agrega 'cancelada' como estatus válido (borrado
+-- lógico -- solo aplica a solicitudes que seguían 'pendiente').
+alter table solicitudes_credito drop constraint if exists solicitudes_credito_estatus_check;
+alter table solicitudes_credito add constraint solicitudes_credito_estatus_check check (estatus in ('pendiente', 'aprobado', 'rechazado', 'cancelada'));
 
 -- Un plan de pago/refinanciamiento posible para una tarjeta (ej. el
 -- ejemplo de la portada del PDF: "reestructura tu saldo a 12/18/24 meses").

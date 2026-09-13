@@ -506,6 +506,54 @@ server.tool(
   },
 );
 
+server.tool(
+  'crear_solicitud_credito',
+  'Crea una nueva solicitud de crédito para el usuario, en estatus pendiente.',
+  {
+    userId: z.string().describe('Id del usuario'),
+    tipo: z.enum(['personal', 'hipotecario', 'automotriz', 'tarjeta']),
+    montoSolicitado: z.number().positive(),
+  },
+  async ({ userId, tipo, montoSolicitado }) => {
+    const { rows } = await pool.query(
+      `insert into solicitudes_credito (id, usuario_id, tipo, monto_solicitado)
+       values ('sol-' || gen_random_uuid(), $1, $2, $3)
+       returning id, tipo, monto_solicitado, estatus, fecha`,
+      [userId, tipo, montoSolicitado],
+    );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
+server.tool(
+  'cancelar_solicitud_credito',
+  'Cancela una solicitud de crédito que sigue pendiente (borrado lógico -- una ya aprobada/rechazada no se puede cancelar).',
+  {
+    solicitudId: z.string().describe('Id de la solicitud'),
+  },
+  async ({ solicitudId }) => {
+    const { rows } = await pool.query(
+      `update solicitudes_credito set estatus = 'cancelada'
+       where id = $1 and estatus = 'pendiente'
+       returning id, tipo, monto_solicitado, estatus, fecha`,
+      [solicitudId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Solicitud no encontrada o ya no está pendiente.' }) }],
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(rows[0]) }],
+    };
+  },
+);
+
 // --- Pagos ---
 
 server.tool(
