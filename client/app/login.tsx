@@ -50,6 +50,21 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
+  /**
+   * Al escribir se borra el error anterior.
+   *
+   * Sin esto, el mensaje del intento fallido sigue en pantalla mientras el
+   * usuario corrige el campo: ve "Escribe un correo válido" debajo de un
+   * correo que ya es válido, y no tiene forma de saber que el aviso es
+   * viejo. El error se vuelve a evaluar al enviar, que es cuando importa.
+   */
+  function editar(fijar: (valor: string) => void) {
+    return (valor: string) => {
+      if (error) setError(null);
+      fijar(valor);
+    };
+  }
+
   function handleEntrar() {
     setAviso(null);
 
@@ -92,7 +107,7 @@ export default function Login() {
               <Campo
                 etiqueta="Correo electrónico:"
                 value={correo}
-                onChangeText={setCorreo}
+                onChangeText={editar(setCorreo)}
                 placeholder="tucorreo@ejemplo.com"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -107,7 +122,7 @@ export default function Login() {
                 ref={refContrasena}
                 etiqueta="Contraseña:"
                 value={contrasena}
-                onChangeText={setContrasena}
+                onChangeText={editar(setContrasena)}
                 placeholder="Tu contraseña"
                 secureTextEntry={!verContrasena}
                 autoCapitalize="none"
