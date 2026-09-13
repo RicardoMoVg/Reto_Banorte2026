@@ -25,10 +25,17 @@ const AccionesContext = createContext<ContextoAcciones | null>(null);
  * Ese mensaje se ve en el chat como cualquier otro del usuario: la decisión
  * queda registrada a la vista, no en un canal oculto.
  *
- * **Qué NO hace:** no guarda nada en el servidor. `mcp-server/` no tiene
- * tools de escritura, así que "aceptar" no configura nada fuera de esta
- * sesión. El día que exista una tool de escritura, el cambio es aquí: este
- * `responder` la invoca antes de avisarle al agente.
+ * **Qué NO hace (todavía):** no guarda nada en el servidor. `mcp-server/`
+ * YA tiene tools de escritura (crearMeta, aportarAMeta, crearTransferencia,
+ * etc. -- ver `server/lib/ai/a2ui-tools.ts`) y `server/` ya expone los
+ * mismos endpoints como REST tradicional (`POST /api/metas/aportar`,
+ * `POST /api/transferencias`, etc. -- `constitution.md` 3.3), pero nadie
+ * conectó "aceptar" a ninguno de los dos todavía. El cambio sigue siendo
+ * aquí: este `responder` debe llamar al endpoint REST correspondiente
+ * antes de avisarle al agente. Falta también exponer el id real (ej.
+ * `metaId`) en las props de `PropuestaAhorro`/`ConfirmarAccion` -- hoy solo
+ * traen el nombre para mostrar y el id embebido dentro de `idAccion`, que
+ * no es un contrato pensado para parsearse.
  *
  * Debe montarse DENTRO de `<AgentProvider>` — usa su `enviar`.
  */

@@ -126,8 +126,19 @@ create table if not exists instrumentos (
   -- una apreciación estimada contra MXN, no un rendimiento fijo real (una
   -- divisa fluctúa) -- simplificación aceptada para el demo, no modelamos
   -- tipo de cambio en vivo.
-  rendimiento_anual_estimado numeric not null
+  rendimiento_anual_estimado numeric not null,
+  -- Precio/tipo de cambio base para el "precio simulado" (ver
+  -- mcp-server/src/precios.ts) -- NO es un precio en vivo real, es la base
+  -- sobre la que se calcula una oscilación determinista por tiempo
+  -- (sin(), semilla por id) para que se vea "vivo" sin necesidad de cron ni
+  -- de guardar historial: cualquier punto en el tiempo se puede recalcular
+  -- con la misma fórmula, incluso hacia el pasado (para graficar).
+  precio_base numeric not null default 1
 );
+
+-- migración idempotente para bases ya desplegadas antes de que existiera
+-- `precio_base`.
+alter table instrumentos add column if not exists precio_base numeric not null default 1;
 
 -- migración idempotente: agrega 'divisa' como tipo válido de instrumento.
 alter table instrumentos drop constraint if exists instrumentos_tipo_check;

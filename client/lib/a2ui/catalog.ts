@@ -6,6 +6,9 @@ import { ComparativoGastos } from '../../components/ComparativoGastos';
 import { ActionCardSelector } from '../../components/chat/ActionCardSelector';
 import { ConfirmarAccion } from '../../components/chat/ConfirmarAccion';
 import { PropuestaAhorro } from '../../components/chat/PropuestaAhorro';
+import { Confirmacion } from '../../components/Confirmacion';
+import { GraphSpline } from '../../components/GraphSpline';
+import { GraficoBarras_H } from '../../components/GraphBar_H';
 
 /**
  * Catálogo A2UI: mapea el `tipo` que manda el backend (ver
@@ -22,6 +25,9 @@ export const catalogoA2ui: Record<string, ComponentType<any>> = {
   TarjetaSaldo,
   ListaTransacciones,
   ComparativoGastos,
+  Confirmacion,
+  GraphSpline,
+  GraficoBarras_H,
 
   // De acción (components/chat/): el usuario acepta o rechaza, y su
   // respuesta vuelve al agente. Contrato en components/chat/tipos.ts.
