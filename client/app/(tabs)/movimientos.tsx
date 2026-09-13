@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Dimensions,
   FlatList,
@@ -13,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getTransacciones, type TransaccionApi } from '../../lib/api/rest';
 import { PantallaMarca } from '../../components/ui/PantallaMarca';
 import { colores, espacio, radio, tipografia, vidrio } from '../../lib/ui/theme';
 
@@ -20,6 +22,11 @@ import { colores, espacio, radio, tipografia, vidrio } from '../../lib/ui/theme'
 
 interface Movimiento {
   id: string;
+  /**
+   * Contexto del movimiento. Hoy es la categoria: la base no guarda numero
+   * de tarjeta ni liga el movimiento con una, asi que mostrar "•• 4321"
+   * seria inventarlo.
+   */
   numeroTarjeta: string;
   tipoTarjeta: string;
   fecha: string;
@@ -38,16 +45,37 @@ interface QuickAction {
 
 /* ─── Datos demo ────────────────────────────────────────────────────── */
 
-const MOVIMIENTOS_DEMO: Movimiento[] = [
-  { id: 'm1', numeroTarjeta: '4000 1234 5678 4321', tipoTarjeta: 'crédito', fecha: '2026-09-14', monto: -1200, concepto: 'Pago de servicios', icono: 'receipt-outline' },
-  { id: 'm2', numeroTarjeta: '5200 3344 5566 2045', tipoTarjeta: 'débito', fecha: '2026-09-14', monto: -1200, concepto: 'Transferencia a terceros', icono: 'swap-horizontal-outline' },
-  { id: 'm3', numeroTarjeta: '4000 1234 5678 4321', tipoTarjeta: 'crédito', fecha: '2026-09-12', monto: -900, concepto: 'Gasolina', icono: 'car-outline' },
-  { id: 'm4', numeroTarjeta: '5200 3344 5566 2045', tipoTarjeta: 'débito', fecha: '2026-09-11', monto: -219, concepto: 'Netflix', icono: 'tv-outline' },
-  { id: 'm5', numeroTarjeta: '5200 3344 5566 2045', tipoTarjeta: 'débito', fecha: '2026-09-08', monto: -85, concepto: 'Café El Urbano', icono: 'cafe-outline' },
-  { id: 'm6', numeroTarjeta: '4000 1234 5678 4321', tipoTarjeta: 'crédito', fecha: '2026-09-06', monto: -420, concepto: 'Cine', icono: 'film-outline' },
-  { id: 'm7', numeroTarjeta: '5200 3344 5566 2045', tipoTarjeta: 'débito', fecha: '2026-09-05', monto: 15000, concepto: 'Depósito nómina', icono: 'briefcase-outline' },
-  { id: 'm8', numeroTarjeta: '4000 1234 5678 4321', tipoTarjeta: 'crédito', fecha: '2026-09-03', monto: -1850, concepto: 'Supermercado La Comer', icono: 'cart-outline' },
-];
+/**
+ * Icono por categoria. El dato real trae `categoria` (comida, transporte,
+ * transferencia...), no un icono: el icono es decision de UI, asi que se
+ * mapea aqui y no se le pide al servidor.
+ */
+const ICONO_CATEGORIA: Record<string, keyof typeof Ionicons.glyphMap> = {
+  comida: 'restaurant-outline',
+  transporte: 'car-outline',
+  suscripciones: 'tv-outline',
+  transferencia: 'swap-horizontal-outline',
+  ingreso: 'arrow-down-circle-outline',
+  servicios: 'receipt-outline',
+  entretenimiento: 'film-outline',
+  salud: 'medkit-outline',
+};
+
+/** Convierte lo que devuelve la API a lo que pinta esta pantalla. */
+function aMovimiento(t: TransaccionApi): Movimiento {
+  return {
+    id: t.id,
+    // La base no guarda numero de tarjeta ni relaciona el movimiento con
+    // una: se muestra la categoria, que si es un dato real y ademas dice
+    // mas que "•• 4321".
+    numeroTarjeta: t.categoria ?? 'sin categoria',
+    tipoTarjeta: t.categoria ?? '',
+    fecha: t.fecha,
+    concepto: t.descripcion,
+    monto: t.monto,
+    icono: ICONO_CATEGORIA[t.categoria?.toLowerCase()] ?? 'ellipse-outline',
+  };
+}
 
 const ACCIONES_RAPIDAS: QuickAction[] = [
   { icono: 'swap-horizontal-outline', texto: 'Transferir', ruta: '/transferir' },
@@ -80,13 +108,16 @@ function formatearMonto(monto: number) {
 }
 
 function formatearFecha(iso: string) {
-  const [anio, mes, dia] = iso.split('-').map(Number);
-  if (!anio || !mes || !dia) return iso;
+  // Postgres devuelve el timestamp completo ("2026-09-13T09:31:57.160Z"),
+  // no "AAAA-MM-DD": partir por guiones dejaba el dia en NaN y se pintaba
+  // el ISO crudo en pantalla.
+  const fecha = new Date(iso);
+  if (Number.isNaN(fecha.getTime())) return iso;
   return new Intl.DateTimeFormat('es-MX', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-  }).format(new Date(anio, mes - 1, dia));
+  }).format(fecha);
 }
 
 /* ─── Subcomponentes ────────────────────────────────────────────────── */
@@ -153,6 +184,33 @@ function OpcionSheet({
 export default function Movimientos() {
   const insets = useSafeAreaInsets();
   const [filtro, setFiltro] = useState<Filtro>('todos');
+  const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Los movimientos salen del endpoint REST, no de una constante.
+   *
+   * Va por REST y no por el agente a proposito: una pantalla tradicional
+   * no debe depender del LLM para listar movimientos (constitution.md
+   * 3.3). El endpoint reusa las mismas funciones de MCP que usa el chat.
+   */
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    setError(null);
+    try {
+      const { transacciones } = await getTransacciones({ limite: 50 });
+      setMovimientos(transacciones.map(aMovimiento));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudieron cargar tus movimientos.');
+    } finally {
+      setCargando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
   const [seleccionado, setSeleccionado] = useState<Movimiento | null>(null);
 
   /* Animación del bottom sheet (slide-up). */
@@ -187,7 +245,7 @@ export default function Movimientos() {
     outputRange: [0, 1],
   });
 
-  const movimientosFiltrados = MOVIMIENTOS_DEMO.filter((m) => {
+  const movimientosFiltrados = movimientos.filter((m) => {
     if (filtro === 'ingresos') return m.monto >= 0;
     if (filtro === 'egresos') return m.monto < 0;
     return true;
@@ -215,7 +273,7 @@ export default function Movimientos() {
         <View style={styles.textoFila}>
           <Text style={styles.concepto} numberOfLines={1}>{item.concepto}</Text>
           <Text style={styles.fecha}>
-            {formatearFecha(item.fecha)} · •• {item.numeroTarjeta.slice(-4)}
+            {formatearFecha(item.fecha)} · {item.numeroTarjeta}
           </Text>
         </View>
 
@@ -304,8 +362,34 @@ export default function Movimientos() {
         ItemSeparatorComponent={() => <View style={styles.separador} />}
         ListEmptyComponent={
           <View style={styles.vacio}>
-            <Ionicons name="document-text-outline" size={32} color={vidrio.textoTenue} />
-            <Text style={styles.vacioTexto}>No hay movimientos con este filtro</Text>
+            {cargando ? (
+              <>
+                <ActivityIndicator color={colores.textoInverso} />
+                <Text style={styles.vacioTexto}>Cargando tus movimientos…</Text>
+              </>
+            ) : error ? (
+              <>
+                <Ionicons name="cloud-offline-outline" size={32} color={vidrio.textoTenue} />
+                {/* Se muestra el error del servidor, no un "algo salió mal":
+                    si falta configuracion o el backend no esta arriba, el
+                    mensaje lo dice y ahorra el viaje al log. */}
+                <Text style={styles.vacioTexto}>{error}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Reintentar"
+                  onPress={cargar}
+                  style={({ pressed }) => [styles.reintentar, pressed && { opacity: 0.7 }]}
+                >
+                  <Ionicons name="refresh" size={14} color={colores.textoInverso} />
+                  <Text style={styles.reintentarTexto}>Reintentar</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Ionicons name="document-text-outline" size={32} color={vidrio.textoTenue} />
+                <Text style={styles.vacioTexto}>No hay movimientos con este filtro</Text>
+              </>
+            )}
           </View>
         }
       />
@@ -359,7 +443,7 @@ export default function Movimientos() {
                 <View style={styles.sheetHeaderTexto}>
                   <Text style={styles.sheetConcepto}>{seleccionado.concepto}</Text>
                   <Text style={styles.sheetFecha}>
-                    {formatearFecha(seleccionado.fecha)} · •• {seleccionado.numeroTarjeta.slice(-4)} · {seleccionado.tipoTarjeta}
+                    {formatearFecha(seleccionado.fecha)} · {seleccionado.numeroTarjeta}
                   </Text>
                 </View>
                 <Text style={[
@@ -510,6 +594,17 @@ const styles = StyleSheet.create({
   },
 
   vacio: { alignItems: 'center', gap: espacio.md, paddingVertical: espacio.xxl },
+  reintentar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacio.xs,
+    marginTop: espacio.md,
+    borderRadius: radio.completo,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    paddingHorizontal: espacio.lg,
+    paddingVertical: espacio.sm,
+  },
+  reintentarTexto: { fontSize: 12, fontWeight: '600', color: colores.textoInverso },
   vacioTexto: { fontSize: 13, color: vidrio.textoTenue },
 
   /* ── Bottom Sheet ── */

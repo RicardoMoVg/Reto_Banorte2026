@@ -49,6 +49,22 @@ export async function getUsuarioDeRequest(req: Request): Promise<UsuarioAutentic
  *   if (auth instanceof Response) return auth;
  *   const { id: userId } = auth;
  */
+/**
+ * Usuario que se asume cuando la peticion llega SIN token.
+ *
+ * Apagado por omision: si la variable no esta en el .env, todo endpoint
+ * protegido sigue respondiendo 401 igual que antes. Existe para que las
+ * pantallas tradicionales (Movimientos, Inicio) puedan leer datos reales
+ * mientras el login de verdad no emite tokens -- sin esto la unica salida
+ * era dejarlas con constantes escritas a mano, que es peor: se ven bonitas
+ * y mienten.
+ *
+ * ⚠️ QUITAR cuando el login emita tokens. Con esto puesto, cualquiera que
+ * alcance el servidor lee y escribe como ese usuario.
+ */
+const USUARIO_SIN_TOKEN = process.env.AUTH_USUARIO_SIN_TOKEN;
+let yaAvisamos = false;
+
 export async function requireUsuario(req: Request): Promise<UsuarioAutenticado | Response> {
   let usuario: UsuarioAutenticado | null;
 
@@ -72,6 +88,18 @@ export async function requireUsuario(req: Request): Promise<UsuarioAutenticado |
       },
       { status: 500 },
     );
+  }
+
+  if (!usuario && USUARIO_SIN_TOKEN) {
+    if (!yaAvisamos) {
+      console.warn(
+        `[auth] AUTH_USUARIO_SIN_TOKEN activo: las peticiones sin token se ` +
+          `atienden como "${USUARIO_SIN_TOKEN}". Quitar esta variable cuando el ` +
+          `login emita tokens.`,
+      );
+      yaAvisamos = true;
+    }
+    return { id: USUARIO_SIN_TOKEN, email: null };
   }
 
   if (!usuario) {
