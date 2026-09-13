@@ -204,8 +204,18 @@ export function buildA2uiTools(userId: string) {
       parameters: schemaAportarAMeta,
       execute: async ({ metaId, monto, mensajeAgente }) => {
         const metas = await getMetasUsuario(userId);
-        const meta = (metaId && metas.find((m) => m.id === metaId)) || metas[0];
-        if (!meta) return { error: 'El usuario no tiene metas registradas.' };
+        // A diferencia de mostrarProgresoMeta (solo lectura), aquí un
+        // metaId que no existe SÍ debe truncar en error -- es dinero
+        // moviéndose de verdad, no se vale adivinar en silencio a cuál
+        // meta cayó.
+        let meta;
+        if (metaId) {
+          meta = metas.find((m) => m.id === metaId);
+          if (!meta) return { error: `No se encontró una meta activa con id "${metaId}".` };
+        } else {
+          meta = metas[0];
+          if (!meta) return { error: 'El usuario no tiene metas registradas.' };
+        }
 
         const resultado = await aportarAMeta(userId, meta.id, monto);
         if ('error' in resultado) return { error: resultado.error };
@@ -271,8 +281,14 @@ export function buildA2uiTools(userId: string) {
       parameters: schemaCrearTransaccion,
       execute: async ({ cuentaId, descripcion, monto, categoria, mensajeAgente }) => {
         const cuentas = await getCuentasUsuario(userId);
-        const cuenta = (cuentaId && cuentas.find((c) => c.id === cuentaId)) || cuentas[0];
-        if (!cuenta) return { error: 'El usuario no tiene cuentas registradas.' };
+        let cuenta;
+        if (cuentaId) {
+          cuenta = cuentas.find((c) => c.id === cuentaId);
+          if (!cuenta) return { error: `No se encontró una cuenta con id "${cuentaId}".` };
+        } else {
+          cuenta = cuentas[0];
+          if (!cuenta) return { error: 'El usuario no tiene cuentas registradas.' };
+        }
 
         const resultado = await crearTransaccion(userId, cuenta.id, descripcion, monto, categoria);
         if ('error' in resultado) return { error: resultado.error };
@@ -345,8 +361,14 @@ export function buildA2uiTools(userId: string) {
       parameters: schemaCrearCompraTarjeta,
       execute: async ({ tarjetaId, descripcion, monto, mensajeAgente }) => {
         const tarjetas = await getTarjetasCredito(userId);
-        const tarjeta = (tarjetaId && tarjetas.find((t) => t.id === tarjetaId)) || tarjetas[0];
-        if (!tarjeta) return { error: 'El usuario no tiene tarjetas de crédito registradas.' };
+        let tarjeta;
+        if (tarjetaId) {
+          tarjeta = tarjetas.find((t) => t.id === tarjetaId);
+          if (!tarjeta) return { error: `No se encontró una tarjeta con id "${tarjetaId}".` };
+        } else {
+          tarjeta = tarjetas[0];
+          if (!tarjeta) return { error: 'El usuario no tiene tarjetas de crédito registradas.' };
+        }
 
         const resultado = await crearCompraTarjeta(userId, tarjeta.id, descripcion, monto);
         if ('error' in resultado) return { error: resultado.error };
