@@ -5,7 +5,18 @@ export type EstadoAccion = 'pendiente' | 'aceptada' | 'rechazada';
 
 interface ContextoAcciones {
   estadoDe: (idAccion: string) => EstadoAccion;
-  responder: (idAccion: string, decision: Exclude<EstadoAccion, 'pendiente'>, etiqueta: string) => void;
+  responder: (
+    idAccion: string,
+    decision: Exclude<EstadoAccion, 'pendiente'>,
+    etiqueta: string,
+    /**
+     * Receta `{tool, args}` que el servidor ejecuta al confirmar, sin
+     * pasar por el modelo. La trae la propia tarjeta en sus props; el
+     * cliente solo la devuelve tal cual. Solo aplica al aceptar: rechazar
+     * nunca ejecuta nada.
+     */
+    ejecucion?: unknown,
+  ) => void;
 }
 
 const AccionesContext = createContext<ContextoAcciones | null>(null);
@@ -44,7 +55,7 @@ export function AccionesProvider({ children }: { children: ReactNode }) {
   const [estados, setEstados] = useState<Record<string, EstadoAccion>>({});
 
   const responder = useCallback<ContextoAcciones['responder']>(
-    (idAccion, decision, etiqueta) => {
+    (idAccion, decision, etiqueta, ejecucion) => {
       setEstados((previo) => {
         // Sin esto, un doble toque manda dos mensajes al agente.
         if (previo[idAccion] && previo[idAccion] !== 'pendiente') return previo;
@@ -55,6 +66,8 @@ export function AccionesProvider({ children }: { children: ReactNode }) {
       // cifra: el modelo no debe retranscribir montos (constitution.md 4.4).
       enviar(decision === 'aceptada' ? `Acepto ${etiqueta}.` : `No acepto ${etiqueta}.`, {
         esDecision: true,
+        // Rechazar nunca ejecuta: la receta solo viaja si acepto.
+        ejecucion: decision === 'aceptada' ? ejecucion : undefined,
       });
     },
     [enviar],

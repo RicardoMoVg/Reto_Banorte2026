@@ -931,35 +931,55 @@ export function buildA2uiTools(userId: string) {
       },
     }),
 
-    crearTransferencia: tool({
+    proponerTransferencia: tool({
       description:
-        'Transfiere dinero del usuario a uno de sus contactos de pago guardados. Úsala cuando pida ' +
-        'transferirle/mandarle dinero a alguien por nombre.',
+        'Prepara una transferencia a un contacto guardado y se la muestra al usuario para que ' +
+        'la confirme. Usala cuando pida transferirle/mandarle dinero a alguien por nombre. ' +
+        'NO mueve dinero: solo propone. El movimiento ocurre cuando el usuario toca el boton ' +
+        'de confirmar en la tarjeta.',
       parameters: schemaCrearTransferencia,
       execute: async ({ nombreContacto, monto, concepto, mensajeAgente }) => {
         const contactos = await getContactosPago(userId, { nombre: nombreContacto });
 
         if (contactos.length === 0) {
-          return { error: `No se encontró ningún contacto guardado que coincida con "${nombreContacto}".` };
+          return { error: `No se encontro ningun contacto guardado que coincida con "${nombreContacto}".` };
         }
         if (contactos.length > 1) {
           return {
-            error: `Hay más de un contacto que coincide con "${nombreContacto}": ${contactos
+            error: `Hay mas de un contacto que coincide con "${nombreContacto}": ${contactos
               .map((c) => c.nombre)
-              .join(', ')}. Pide que aclare a cuál.`,
+              .join(', ')}. Pide que aclare a cual.`,
           };
         }
 
-        const resultado = await crearTransferencia(userId, contactos[0].id, monto, concepto);
-        if ('error' in resultado) return { error: resultado.error };
+        const contacto = contactos[0];
+        const resumen = [{ etiqueta: `Para ${contacto.nombre}`, valor: formatoMXN.format(monto) }];
 
         return {
-          tipo: 'Confirmacion' as const,
+          tipo: 'ConfirmarAccion' as const,
           props: {
-            titulo: 'Transferencia realizada',
-            mensaje: `$${monto} a ${contactos[0].nombre}.`,
-            exito: true,
+            idAccion: `transferencia-${contacto.id}-${Date.now()}`,
+            etiqueta: `la transferencia a ${contacto.nombre}`,
+            intencion: 'alerta' as const,
+            titulo: `Transferir a ${contacto.nombre}`,
+            resumen,
+            textoAceptar: 'Confirmar transferencia',
+            resultado: `Transferencia enviada a ${contacto.nombre}.`,
+            advertencia: concepto
+              ? `Concepto: ${concepto}. Una transferencia enviada no se puede deshacer.`
+              : 'Una transferencia enviada no se puede deshacer.',
             mensajeAgente,
+            /**
+             * La receta de ejecucion. El cliente la regresa TAL CUAL al
+             * confirmar y el servidor la corre sin volver a preguntarle al
+             * modelo: si el modelo tuviera que elegir la tool otra vez,
+             * podria equivocarse de contacto o de monto en el segundo
+             * intento. Aqui el monto ya esta fijado y validado.
+             */
+            ejecucion: {
+              tool: 'ejecutarTransferencia',
+              args: { contactoId: contacto.id, monto, concepto },
+            },
           },
         };
       },

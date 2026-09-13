@@ -65,7 +65,10 @@ export function useAgentStream(apiUrl: string) {
    * system prompt. Con el, el servidor apaga las tools ese turno y la
    * respuesta en texto deja de depender de que el modelo obedezca.
    */
-  async function enviar(texto: string, { esDecision = false } = {}) {
+  async function enviar(
+    texto: string,
+    { esDecision = false, ejecucion }: { esDecision?: boolean; ejecucion?: unknown } = {},
+  ) {
     if (!texto || cargando) return;
 
     setCargando(true);
@@ -82,6 +85,7 @@ export function useAgentStream(apiUrl: string) {
           message: texto,
           historial: aHistorial(mensajesRef.current),
           esDecision,
+          ejecucion,
         }),
       });
 

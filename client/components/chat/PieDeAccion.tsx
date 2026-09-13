@@ -17,6 +17,8 @@ export interface PieDeAccionProps {
   textoAceptar?: string;
   /** Qué queda configurado al aceptar. Se muestra ya resuelta la decisión. */
   resultado: string;
+  /** Receta que el servidor ejecuta al aceptar (ver ejecutables.ts). */
+  ejecucion?: unknown;
 }
 
 /**
@@ -50,6 +52,7 @@ export function PieDeAccion({
   intencion = 'neutral',
   textoAceptar = 'Aceptar',
   resultado,
+  ejecucion,
 }: PieDeAccionProps) {
   const acciones = useAcciones();
   const estado = acciones?.estadoDe(idAccion) ?? 'pendiente';
@@ -71,7 +74,7 @@ export function PieDeAccion({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={textoAceptar}
-        onPress={() => acciones.responder(idAccion, 'aceptada', etiqueta)}
+        onPress={() => acciones.responder(idAccion, 'aceptada', etiqueta, ejecucion)}
         style={({ pressed }) => [
           styles.boton,
           { backgroundColor: fondoAccion, borderColor: fondoAccion },

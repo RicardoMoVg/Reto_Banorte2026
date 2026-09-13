@@ -957,7 +957,14 @@ server.tool(
 
     if (nombre) {
       valores.push(`%${nombre}%`);
-      condiciones.push(`nombre ilike $${valores.length}`);
+      // `ilike` ignora mayusculas pero NO acentos: buscar "Maria Lopez"
+      // no encontraba a "Maria Lopez" con tildes, y en una app en espaniol
+      // eso falla con Maria, Jose, Ramirez... Se normalizan los dos lados
+      // con translate() en vez de la extension `unaccent`, que habria que
+      // instalar en la base (y en Supabase no siempre esta disponible).
+      const sinAcentos = (expr: string) =>
+        `translate(${expr}, 'áàäéèëíìïóòöúùüñÁÀÄÉÈËÍÌÏÓÒÖÚÙÜÑ', 'aaaeeeiiiooouuunAAAEEEIIIOOOUUUN')`;
+      condiciones.push(`${sinAcentos('nombre')} ilike ${sinAcentos(`$${valores.length}`)}`);
     }
 
     const { rows } = await pool.query(

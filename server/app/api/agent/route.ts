@@ -3,6 +3,7 @@ import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
 import { buildA2uiTools } from '@/lib/ai/a2ui-tools';
 import { SYSTEM_PROMPT } from '@/lib/ai/system-prompt';
+import { esEjecutable, ejecutar, type Ejecucion } from '@/lib/ai/ejecutables';
 
 export const runtime = 'nodejs';
 
@@ -184,11 +185,36 @@ async function* generarEventos(
   }
 }
 
+/**
+ * Atajo para cuando el usuario confirma una tarjeta que trae receta de
+ * ejecucion: se corre la operacion y se devuelve su bloque, SIN llamar al
+ * modelo.
+ *
+ * Que no pase por el LLM es el punto, no una optimizacion: el monto y el
+ * destinatario ya los valido y fijo la tool que propuso. Volver a
+ * preguntarle al modelo abriria la puerta a que se equivoque de contacto o
+ * de cifra justo en el paso que mueve el dinero.
+ */
+async function* generarEjecucion(ejecucion: Ejecucion): AsyncGenerator<EventoA2ui> {
+  try {
+    const salida = await ejecutar(USER_ID, ejecucion);
+    if ('error' in salida) {
+      yield { type: 'text', content: salida.error };
+      return;
+    }
+    yield { type: 'surface', tipo: salida.tipo, props: salida.props };
+  } catch (err) {
+    console.error('[agent] fallo la ejecucion confirmada:', err);
+    yield { type: 'error', message: `No se pudo completar la operacion: ${String(err)}` };
+  }
+}
+
 export async function POST(req: Request) {
-  const { message, historial, esDecision } = (await req.json()) as {
+  const { message, historial, esDecision, ejecucion } = (await req.json()) as {
     message: string;
     historial?: unknown;
     esDecision?: boolean;
+    ejecucion?: Ejecucion;
   };
 
   const encoder = new TextEncoder();
@@ -200,8 +226,17 @@ export async function POST(req: Request) {
       };
 
       try {
-        for await (const evento of generarEventos(message, historial, esDecision === true)) {
-          enviar(evento);
+        // Una receta de ejecucion solo se acepta si esta en la lista
+        // blanca de lib/ai/ejecutables.ts: el nombre lo manda el cliente,
+        // y sin acotarlo esto seria "ejecuta lo que te pidan por HTTP".
+        if (ejecucion && esEjecutable(ejecucion.tool)) {
+          for await (const evento of generarEjecucion(ejecucion)) {
+            enviar(evento);
+          }
+        } else {
+          for await (const evento of generarEventos(message, historial, esDecision === true)) {
+            enviar(evento);
+          }
         }
         enviar({ type: 'done' });
       } catch (err) {

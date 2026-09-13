@@ -23,6 +23,13 @@ export interface ConfirmarAccionProps extends PropsDeAccion {
   resultado: string;
   /** Advertencia opcional: algo que conviene saber ANTES de aceptar. */
   advertencia?: string;
+  /**
+   * Receta que el servidor ejecuta al confirmar (ver
+   * `server/lib/ai/ejecutables.ts`). La tarjeta no la interpreta: la
+   * transporta y la devuelve intacta. Sin esto, aceptar solo le avisa al
+   * agente; con esto, ademas ocurre la operacion.
+   */
+  ejecucion?: unknown;
   mensajeAgente: string;
 }
 
@@ -47,6 +54,7 @@ export function ConfirmarAccion({
   textoAceptar,
   resultado,
   advertencia,
+  ejecucion,
   mensajeAgente,
 }: ConfirmarAccionProps) {
   return (
@@ -82,6 +90,7 @@ export function ConfirmarAccion({
         intencion={intencion}
         textoAceptar={textoAceptar}
         resultado={resultado}
+        ejecucion={ejecucion}
       />
     </View>
   );
